@@ -161,6 +161,39 @@ export const deepAgent = new ToolLoopAgent({
       }
     }
 
+    // Check if we should force exit_plan_mode after plan file creation
+    let forceExitPlanMode = false;
+    if (agentMode === "plan" && planFilePath) {
+      const lastStepForPlanCheck = steps[steps.length - 1];
+      if (
+        lastStepForPlanCheck?.toolCalls &&
+        lastStepForPlanCheck?.toolResults
+      ) {
+        for (const result of lastStepForPlanCheck.toolResults) {
+          if (deniedTools.has(result.toolCallId)) continue;
+          if (
+            !result.dynamic &&
+            result.toolName === "write" &&
+            result.output?.success === true
+          ) {
+            // Find matching tool call with proper type narrowing
+            for (const tc of lastStepForPlanCheck.toolCalls) {
+              if (
+                !tc.dynamic &&
+                tc.toolName === "write" &&
+                tc.toolCallId === result.toolCallId &&
+                tc.input.filePath === planFilePath
+              ) {
+                forceExitPlanMode = true;
+                break;
+              }
+            }
+            if (forceExitPlanMode) break;
+          }
+        }
+      }
+    }
+
     // Update active tools based on current mode
     const activeToolNames =
       agentMode === "plan" ? PLAN_MODE_TOOLS : DEFAULT_MODE_TOOLS;
@@ -186,7 +219,10 @@ export const deepAgent = new ToolLoopAgent({
         messages: compactContext({ messages, steps }),
         model,
       }),
-      activeTools: [...activeToolNames],
+      // activeTools: [...activeToolNames],
+      ...(forceExitPlanMode && {
+        toolChoice: { type: "tool", toolName: "exit_plan_mode" },
+      }),
       ...(instructions && { instructions }),
       experimental_context: {
         ...(experimental_context as object),
@@ -232,7 +268,7 @@ export const deepAgent = new ToolLoopAgent({
         tools: settings.tools ?? tools,
         model: callModel,
       }),
-      activeTools: [...activeToolNames],
+      // activeTools: [...activeToolNames],
       instructions,
       experimental_context: {
         sandbox,

@@ -28,6 +28,9 @@ export function WriteRenderer({
       ? (part.output?.error ?? "Write failed")
       : undefined;
 
+  // Hide preview in plan mode
+  const isPlanMode = chatState.agentMode === "plan";
+
   // Merge output error into state
   const mergedState = outputError
     ? { ...state, error: state.error ?? outputError }
@@ -36,7 +39,9 @@ export function WriteRenderer({
   return (
     <NewFileLayout
       filePath={filePath}
-      lines={state.running || state.denied || outputError ? [] : lines}
+      lines={
+        state.running || state.denied || outputError || isPlanMode ? [] : lines
+      }
       totalLines={totalLines}
       hiddenLines={hiddenLines}
       state={mergedState}

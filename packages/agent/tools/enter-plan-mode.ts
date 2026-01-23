@@ -100,7 +100,9 @@ const CONFIG_DIR = join(homedir(), ".config", "open-harness");
 const PLANS_DIR = join(CONFIG_DIR, "plans");
 
 // TODO: if anthropic bug still exists, add empty item here
-const enterPlanModeInputSchema = z.object({});
+const enterPlanModeInputSchema = z.object({
+  _: z.string().optional(),
+});
 
 export const enterPlanModeTool = () =>
   tool({

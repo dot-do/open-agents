@@ -208,6 +208,15 @@ In plan mode, you MUST NOT:
 - Ask user questions with \`ask_user_question\`
 - Write/edit the plan file using the \`write\` or \`edit\` tool
 
+## Before Writing the Plan
+
+Before creating the plan file, ensure you:
+1. Have thoroughly explored the relevant parts of the codebase
+2. Have asked clarifying questions using \`ask_user_question\` for any ambiguous requirements
+3. Have a clear understanding of the user's goals and constraints
+
+Do not create the plan file until you have gathered all necessary information.
+
 ## Writing the Plan File
 
 **CRITICAL:** Always use the \`write\` tool to create/update the plan file. NEVER use bash commands like \`cat\`, \`echo\`, or heredocs to write the plan file. The \`write\` tool is the only approved method.
