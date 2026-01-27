@@ -1,3 +1,4 @@
+import { discoverSkills } from "@open-harness/agent";
 import { connectSandbox, type SandboxState } from "@open-harness/sandbox";
 import { convertToModelMessages, gateway, type LanguageModelUsage } from "ai";
 import { nanoid } from "nanoid";
@@ -70,6 +71,15 @@ export async function POST(req: Request) {
     env: githubToken ? { GITHUB_TOKEN: githubToken } : undefined,
   });
 
+  // Discover skills from the sandbox's working directory
+  // Only project-level skills (no user home directory in remote sandboxes)
+  // TODO: Optimize if this becomes a bottleneck (~20ms no skills, ~130ms with 5 skills)
+  const skillBaseFolders = [".claude", ".agents"];
+  const skillDirs = skillBaseFolders.map(
+    (folder) => `${sandbox.workingDirectory}/${folder}/skills`,
+  );
+  const skills = await discoverSkills(sandbox, skillDirs);
+
   // Save user message immediately (incremental persistence)
   // Only save if the message has an ID (non-empty string) and hasn't been persisted yet
   if (taskId && messages.length > 0) {
@@ -118,6 +128,7 @@ export async function POST(req: Request) {
         autoApprove: "all",
         sessionRules: [],
       },
+      ...(skills.length > 0 && { skills }),
     },
     abortSignal: req.signal,
   });

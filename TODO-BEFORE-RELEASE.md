@@ -42,6 +42,7 @@ To work through these todos, follow this pattern:
 - [ ] Move to workspace approach (multiple chats per workspace)
 - [x] Migrate from raw fetching to SWR
 - [ ] explore a new package with ai related utils (e.g. predicate for sendAutomaticallyWhen etc.)
+- [ ] Optimize skill discovery if it becomes a bottleneck (cache per task, parallelize reads, or HTTP caching)
 
 ### Cancelled
 
