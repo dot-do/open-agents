@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { LogOut, Settings } from "lucide-react";
+import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,8 +30,6 @@ export function UserAvatarDropdown() {
     return null;
   }
 
-  const initials = session.user.username.slice(0, 2).toUpperCase();
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -47,9 +45,7 @@ export function UserAvatarDropdown() {
                 alt={session.user.username}
               />
             ) : null}
-            <AvatarFallback className="bg-purple-600 text-xs font-medium text-white">
-              {initials}
-            </AvatarFallback>
+            <AvatarFallback className="bg-black" />
           </Avatar>
         </Button>
       </DropdownMenuTrigger>

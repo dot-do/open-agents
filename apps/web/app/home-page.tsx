@@ -1,0 +1,172 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { SignInButton } from "@/components/auth/sign-in-button";
+import { HomeSkeleton, TaskListSkeleton } from "@/components/home-skeleton";
+import { TaskInput } from "@/components/task-input";
+import { TaskList } from "@/components/task-list";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { UserAvatarDropdown } from "@/components/user-avatar-dropdown";
+import { useSession } from "@/hooks/use-session";
+import { useTasks } from "@/hooks/use-tasks";
+
+interface HomePageProps {
+  hasSessionCookie: boolean;
+}
+
+export function HomePage({ hasSessionCookie }: HomePageProps) {
+  const router = useRouter();
+  const { loading: sessionLoading, isAuthenticated } = useSession();
+  const { tasks, loading, createTask } = useTasks({
+    enabled: isAuthenticated,
+  });
+  const [isCreating, setIsCreating] = useState(false);
+
+  const handleCreateTask = async (input: {
+    prompt: string;
+    repoOwner?: string;
+    repoName?: string;
+    branch?: string;
+    cloneUrl?: string;
+    isNewBranch: boolean;
+    modelId: string;
+    sandboxType: string;
+  }) => {
+    setIsCreating(true);
+    try {
+      const task = await createTask({
+        title: input.prompt,
+        repoOwner: input.repoOwner,
+        repoName: input.repoName,
+        branch: input.branch,
+        cloneUrl: input.cloneUrl,
+        isNewBranch: input.isNewBranch,
+        modelId: input.modelId,
+      });
+      // Navigate to the task detail page with sandbox type
+      const sandboxParam =
+        input.sandboxType !== "hybrid" ? `?sandbox=${input.sandboxType}` : "";
+      router.push(`/tasks/${task.id}${sandboxParam}`);
+    } catch (error) {
+      console.error("Failed to create task:", error);
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const handleTaskClick = (taskId: string) => {
+    router.push(`/tasks/${taskId}`);
+  };
+
+  if (sessionLoading && hasSessionCookie) {
+    return <HomeSkeleton />;
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="flex min-h-screen flex-col bg-background text-foreground">
+        <header className="flex items-center justify-between px-6 py-4">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-border">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                className="h-4 w-4"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 6v6l4 2" />
+              </svg>
+            </div>
+            <span className="text-lg font-semibold">Open Harness</span>
+          </div>
+        </header>
+
+        <main className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+          <h1 className="text-3xl font-light text-foreground">
+            Start a task, ship faster
+          </h1>
+          <p className="mt-3 max-w-md text-sm text-muted-foreground">
+            Sign in to kick off coding tasks and track progress in one place.
+          </p>
+          <div className="mt-6">
+            <SignInButton />
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-screen flex-col bg-background text-foreground">
+      <header className="flex items-center justify-between px-6 py-4">
+        <div className="flex items-center gap-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full border border-border">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className="h-4 w-4"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 6v6l4 2" />
+            </svg>
+          </div>
+          <span className="text-lg font-semibold">Open Harness</span>
+        </div>
+        <UserAvatarDropdown />
+      </header>
+
+      <main className="flex flex-1 flex-col items-center px-6 pt-16">
+        <h1 className="mb-8 text-3xl font-light text-foreground">
+          What should we ship next?
+        </h1>
+
+        <TaskInput onSubmit={handleCreateTask} isLoading={isCreating} />
+
+        <div className="mt-8 w-full max-w-2xl">
+          <Tabs defaultValue="tasks">
+            <TabsList className="h-auto w-auto justify-start gap-8 bg-transparent p-0">
+              <TabsTrigger
+                value="tasks"
+                className="relative h-auto rounded-none border-0 bg-transparent px-0 pb-3 pt-0 text-sm font-normal text-muted-foreground shadow-none transition-colors hover:bg-transparent hover:text-foreground data-[state=active]:bg-transparent data-[state=active]:font-normal data-[state=active]:text-foreground data-[state=active]:shadow-none dark:data-[state=active]:bg-transparent data-[state=active]:after:absolute data-[state=active]:after:-bottom-px data-[state=active]:after:left-0 data-[state=active]:after:right-0 data-[state=active]:after:h-px data-[state=active]:after:bg-foreground"
+              >
+                Tasks
+              </TabsTrigger>
+              <TabsTrigger
+                value="archive"
+                className="relative h-auto rounded-none border-0 bg-transparent px-0 pb-3 pt-0 text-sm font-normal text-muted-foreground shadow-none transition-colors hover:bg-transparent hover:text-foreground data-[state=active]:bg-transparent data-[state=active]:font-normal data-[state=active]:text-foreground data-[state=active]:shadow-none dark:data-[state=active]:bg-transparent data-[state=active]:after:absolute data-[state=active]:after:-bottom-px data-[state=active]:after:left-0 data-[state=active]:after:right-0 data-[state=active]:after:h-px data-[state=active]:after:bg-foreground"
+              >
+                Archive
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="tasks" className="mt-6">
+              {loading ? (
+                <TaskListSkeleton />
+              ) : (
+                <TaskList
+                  tasks={tasks.filter((t) => t.status !== "archived")}
+                  onTaskClick={handleTaskClick}
+                />
+              )}
+            </TabsContent>
+            <TabsContent value="archive" className="mt-6">
+              {loading ? (
+                <TaskListSkeleton />
+              ) : (
+                <TaskList
+                  tasks={tasks.filter((t) => t.status === "archived")}
+                  onTaskClick={handleTaskClick}
+                  emptyMessage="No archived tasks"
+                />
+              )}
+            </TabsContent>
+          </Tabs>
+        </div>
+      </main>
+    </div>
+  );
+}

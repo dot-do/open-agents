@@ -1,8 +1,8 @@
 "use client";
 
 import useSWR from "swr";
-import { fetcher } from "@/lib/swr";
 import type { Task } from "@/lib/db/schema";
+import { fetcher } from "@/lib/swr";
 
 interface CreateTaskInput {
   title: string;
@@ -19,9 +19,10 @@ interface TasksResponse {
   tasks: Task[];
 }
 
-export function useTasks() {
+export function useTasks(options?: { enabled?: boolean }) {
+  const enabled = options?.enabled ?? true;
   const { data, error, isLoading, mutate } = useSWR<TasksResponse>(
-    "/api/tasks",
+    enabled ? "/api/tasks" : null,
     fetcher,
   );
 
