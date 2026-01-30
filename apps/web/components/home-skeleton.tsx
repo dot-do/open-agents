@@ -220,9 +220,7 @@ export function HomeSkeleton() {
           <span className="text-lg font-semibold">Open Harness</span>
         </div>
         <div className="flex h-9 w-9 items-center justify-center">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-purple-600 text-xs font-medium text-white">
-            NH
-          </div>
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent" />
         </div>
       </header>
 
