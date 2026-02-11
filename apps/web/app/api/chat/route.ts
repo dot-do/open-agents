@@ -9,6 +9,7 @@ import { nanoid } from "nanoid";
 import { webAgent } from "@/app/config";
 import type { WebAgentUIMessage } from "@/app/types";
 import {
+  compareAndSetChatActiveStreamId,
   createChatMessageIfNotExists,
   getChatById,
   getChatMessages,
@@ -16,7 +17,7 @@ import {
   updateChat,
   updateChatActiveStreamId,
   updateSession,
-  upsertChatMessage,
+  upsertChatMessageScoped,
 } from "@/lib/db/sessions";
 import { getRepoToken } from "@/lib/github/get-repo-token";
 import { getUserGitHubToken } from "@/lib/github/user-token";
@@ -136,48 +137,72 @@ export async function POST(req: Request) {
   );
   const skills = await discoverSkills(sandbox, skillDirs);
 
-  // Save user message immediately (incremental persistence)
-  // Only save if the message has an ID (non-empty string) and hasn't been persisted yet
+  const requestStreamToken = nanoid();
+  await updateChatActiveStreamId(chatId, requestStreamToken);
+  let ownedStreamToken = requestStreamToken;
+
+  const isCurrentStreamOwner = async () => {
+    const latestChat = await getChatById(chatId);
+    return latestChat?.activeStreamId === ownedStreamToken;
+  };
+
+  // Save the latest incoming message immediately (incremental persistence).
+  // This allows mid-turn tool state updates from client-side tools to survive
+  // route transitions before onFinish persists the final assistant message.
   if (chatId && messages.length > 0) {
-    const userMessage = messages[messages.length - 1];
+    const latestMessage = messages[messages.length - 1];
     if (
-      userMessage &&
-      userMessage.role === "user" &&
-      typeof userMessage.id === "string" &&
-      userMessage.id.length > 0
+      latestMessage &&
+      (latestMessage.role === "user" || latestMessage.role === "assistant") &&
+      typeof latestMessage.id === "string" &&
+      latestMessage.id.length > 0
     ) {
       try {
-        // Use idempotent insert to handle race conditions gracefully
-        await createChatMessageIfNotExists({
-          id: userMessage.id,
-          chatId,
-          role: "user",
-          parts: userMessage,
-        });
+        if (latestMessage.role === "user") {
+          await createChatMessageIfNotExists({
+            id: latestMessage.id,
+            chatId,
+            role: "user",
+            parts: latestMessage,
+          });
 
-        // Update chat title to first 30 chars of user's first message
-        const existingMessages = await getChatMessages(chatId);
-        if (existingMessages.length === 1) {
-          // This is the first message - extract text content for the title
-          const textContent = userMessage.parts
-            .filter(
-              (part): part is { type: "text"; text: string } =>
-                part.type === "text",
-            )
-            .map((part) => part.text)
-            .join(" ")
-            .trim();
+          // Update chat title to first 30 chars of user's first message
+          const existingMessages = await getChatMessages(chatId);
+          if (existingMessages.length === 1) {
+            // This is the first message - extract text content for the title
+            const textContent = latestMessage.parts
+              .filter(
+                (part): part is { type: "text"; text: string } =>
+                  part.type === "text",
+              )
+              .map((part) => part.text)
+              .join(" ")
+              .trim();
 
-          if (textContent.length > 0) {
-            const title =
-              textContent.length > 30
-                ? `${textContent.slice(0, 30)}...`
-                : textContent;
-            await updateChat(chatId, { title });
+            if (textContent.length > 0) {
+              const title =
+                textContent.length > 30
+                  ? `${textContent.slice(0, 30)}...`
+                  : textContent;
+              await updateChat(chatId, { title });
+            }
+          }
+        } else if (await isCurrentStreamOwner()) {
+          const upsertResult = await upsertChatMessageScoped({
+            id: latestMessage.id,
+            chatId,
+            role: "assistant",
+            parts: latestMessage,
+          });
+
+          if (upsertResult.status === "conflict") {
+            console.warn(
+              `Skipped assistant message upsert due to ID scope conflict: ${latestMessage.id}`,
+            );
           }
         }
       } catch (error) {
-        console.error("Failed to save user message:", error);
+        console.error("Failed to save latest chat message:", error);
       }
     }
   }
@@ -203,30 +228,57 @@ export async function POST(req: Request) {
     controller.abort();
   });
 
-  const finalizeStream = async () => {
+  let stopSignalClosed = false;
+  const closeStopSignal = () => {
+    if (stopSignalClosed) {
+      return;
+    }
+    stopSignalClosed = true;
     unsubscribeStop();
-    await updateChatActiveStreamId(chatId, null);
   };
 
-  const result = await webAgent.stream({
-    messages: modelMessages,
-    options: {
-      sandbox,
-      model,
-      // TODO: consider enabling approvals for non-cloud-sandbox environments
-      approval: {
-        type: "interactive",
-        autoApprove: "all",
-        sessionRules: [],
+  let streamTokenCleared = false;
+  const clearOwnedStreamToken = async () => {
+    if (streamTokenCleared) {
+      return;
+    }
+    streamTokenCleared = true;
+    try {
+      await compareAndSetChatActiveStreamId(chatId, ownedStreamToken, null);
+    } catch (error) {
+      console.error("Failed to finalize active stream token:", error);
+    }
+  };
+
+  let result;
+  try {
+    result = await webAgent.stream({
+      messages: modelMessages,
+      options: {
+        sandbox,
+        model,
+        // TODO: consider enabling approvals for non-cloud-sandbox environments
+        approval: {
+          type: "interactive",
+          autoApprove: "all",
+          sessionRules: [],
+        },
+        ...(skills.length > 0 && { skills }),
       },
-      ...(skills.length > 0 && { skills }),
-    },
-    abortSignal: controller.signal,
-  });
+      abortSignal: controller.signal,
+    });
+  } catch (error) {
+    closeStopSignal();
+    await clearOwnedStreamToken();
+    throw error;
+  }
 
   void result.consumeStream().then(
-    () => finalizeStream(),
-    () => finalizeStream(),
+    () => closeStopSignal(),
+    async () => {
+      closeStopSignal();
+      await clearOwnedStreamToken();
+    },
   );
 
   // Track last step usage for message metadata
@@ -255,22 +307,40 @@ export async function POST(req: Request) {
         streamId,
         () => stream,
       );
-      await updateChatActiveStreamId(chatId, streamId);
+      const claimed = await compareAndSetChatActiveStreamId(
+        chatId,
+        ownedStreamToken,
+        streamId,
+      );
+      if (claimed) {
+        ownedStreamToken = streamId;
+      }
     },
     onFinish: async ({ responseMessage }) => {
-      await finalizeStream();
-
       if (chatId) {
+        const isCurrentOwner = await isCurrentStreamOwner();
+        closeStopSignal();
+        await clearOwnedStreamToken();
+
+        if (!isCurrentOwner) {
+          return;
+        }
+
         const activityAt = new Date();
 
         // Save assistant message (upsert to handle tool results added client-side)
         try {
-          await upsertChatMessage({
+          const upsertResult = await upsertChatMessageScoped({
             id: responseMessage.id,
             chatId,
             role: "assistant",
             parts: responseMessage,
           });
+          if (upsertResult.status === "conflict") {
+            console.warn(
+              `Skipped assistant onFinish upsert due to ID scope conflict: ${responseMessage.id}`,
+            );
+          }
         } catch (error) {
           console.error("Failed to save assistant message:", error);
         }
