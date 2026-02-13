@@ -10,6 +10,7 @@ import {
   type ToolRenderState,
 } from "@/app/lib/render-tool";
 import { ToolLayout } from "./tool-layout";
+import { BashAnthropicRenderer } from "./renderers/bash-anthropic-renderer";
 import { BashRenderer } from "./renderers/bash-renderer";
 import { ReadRenderer } from "./renderers/read-renderer";
 import { WriteRenderer } from "./renderers/write-renderer";
@@ -46,6 +47,10 @@ export function ToolCall({
   switch (part.type) {
     case "tool-bash":
       return <BashRenderer part={part} state={state} {...approvalProps} />;
+    case "tool-bash_anthropic":
+      return (
+        <BashAnthropicRenderer part={part} state={state} {...approvalProps} />
+      );
     case "tool-read":
       return (
         <ReadRenderer part={part} state={state} cwd={cwd} {...approvalProps} />

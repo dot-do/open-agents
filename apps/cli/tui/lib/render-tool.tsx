@@ -12,6 +12,7 @@ import {
 } from "@open-harness/shared/lib/tool-state";
 import React from "react";
 import { AskUserQuestionRenderer } from "../components/tool-renderers/ask-user-question-renderer";
+import { BashAnthropicRenderer } from "../components/tool-renderers/bash-anthropic-renderer";
 import { BashRenderer } from "../components/tool-renderers/bash-renderer";
 import { DefaultRenderer } from "../components/tool-renderers/default-renderer";
 import { EditRenderer } from "../components/tool-renderers/edit-renderer";
@@ -79,6 +80,14 @@ export function renderToolPart(
       return <GrepRenderer part={part} state={state} isExpanded={isExpanded} />;
     case "tool-bash":
       return <BashRenderer part={part} state={state} isExpanded={isExpanded} />;
+    case "tool-bash_anthropic":
+      return (
+        <BashAnthropicRenderer
+          part={part}
+          state={state}
+          isExpanded={isExpanded}
+        />
+      );
     case "tool-todo_write":
       return <TodoRenderer part={part} state={state} isExpanded={isExpanded} />;
     case "tool-task":
