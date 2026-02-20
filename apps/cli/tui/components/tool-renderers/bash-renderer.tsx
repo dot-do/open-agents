@@ -20,7 +20,8 @@ export function BashRenderer({ part, state }: ToolRendererProps<"tool-bash">) {
   const hasOutput = stdout || stderr;
   const toolFailed =
     part.state === "output-available" && part.output?.success === false;
-  const isError = toolFailed || (typeof exitCode === "number" && exitCode !== 0);
+  const isError =
+    toolFailed || (typeof exitCode === "number" && exitCode !== 0);
 
   // Combine stdout and stderr, show last 3 lines
   const combinedOutput = [stdout, stderr].filter(Boolean).join("\n").trim();

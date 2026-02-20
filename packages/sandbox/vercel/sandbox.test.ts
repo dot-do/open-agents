@@ -14,9 +14,9 @@ type MockRunCommandResult = {
   stderr?: () => Promise<string>;
   wait?: (params?: { signal?: AbortSignal }) => Promise<MockWaitResult>;
 };
-let runCommandMock = async (
-  _params?: { env?: Record<string, string> },
-): Promise<MockRunCommandResult> => ({
+let runCommandMock = async (_params?: {
+  env?: Record<string, string>;
+}): Promise<MockRunCommandResult> => ({
   exitCode: 0,
   cmdId: "cmd-1",
   stdout: async () => "",
@@ -41,7 +41,8 @@ mock.module("@vercel/sandbox", () => ({
     get: async ({ sandboxId }: { sandboxId: string }) => ({
       sandboxId,
       routes: Array.from(portDomains.keys()).map((port) => {
-        const domain = portDomains.get(port) ?? `https://sbx-${port}.vercel.run`;
+        const domain =
+          portDomains.get(port) ?? `https://sbx-${port}.vercel.run`;
         const subdomain = new URL(domain).host.replace(".vercel.run", "");
         return { port, subdomain };
       }),
@@ -175,7 +176,10 @@ describe("VercelSandbox.execDetached", () => {
         remainingTimeout: 0,
       });
 
-      const result = await sandbox.execDetached("bun run dev", "/vercel/sandbox");
+      const result = await sandbox.execDetached(
+        "bun run dev",
+        "/vercel/sandbox",
+      );
 
       expect(result).toEqual({ commandId: "cmd-detached-running" });
     } finally {

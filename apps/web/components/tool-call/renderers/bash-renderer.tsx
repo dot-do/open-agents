@@ -25,7 +25,8 @@ export function BashRenderer({
   const stderr = output?.stderr;
   const hasOutput = stdout || stderr;
   const toolFailed = output?.success === false;
-  const isError = toolFailed || (typeof exitCode === "number" && exitCode !== 0);
+  const isError =
+    toolFailed || (typeof exitCode === "number" && exitCode !== 0);
 
   const combinedOutput = [stdout, stderr].filter(Boolean).join("\n").trim();
   const allLines = combinedOutput.split("\n");
@@ -193,7 +194,9 @@ export function BashRenderer({
               <div className="mb-1 text-xs font-medium text-muted-foreground">
                 Mode
               </div>
-              <span className="text-sm text-foreground">Detached (background)</span>
+              <span className="text-sm text-foreground">
+                Detached (background)
+              </span>
             </div>
           )}
 

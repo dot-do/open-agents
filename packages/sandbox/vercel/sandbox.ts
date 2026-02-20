@@ -268,7 +268,9 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
   }
 
   private getPreviewPorts(): number[] {
-    return Array.from(new Set([...(this._ports ?? []), ...this.getRoutePorts()]));
+    return Array.from(
+      new Set([...(this._ports ?? []), ...this.getRoutePorts()]),
+    );
   }
 
   private getCandidatePorts(): number[] {
@@ -300,7 +302,7 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
     }
 
     return {
-      ...(this.env ?? {}),
+      ...this.env,
       ...runtimePreviewEnv,
     };
   }
