@@ -94,16 +94,10 @@ export default async function SessionChatPage({
     notFound();
   }
   const initialMessages = dbMessages.map((m) => m.parts as WebAgentUIMessage);
-  const sessionForClient = {
-    ...sessionRecord,
-    cachedDiff: null,
-    cachedDiffUpdatedAt: null,
-  };
-
   return (
     <DiffsProvider>
       <SessionChatProvider
-        session={sessionForClient}
+        session={sessionRecord}
         chat={chat}
         initialMessages={initialMessages}
       >
