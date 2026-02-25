@@ -242,8 +242,8 @@ export function SharedChatContent({
                                     <Button
                                       type="button"
                                       variant="ghost"
-                                      size="sm"
-                                      className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                                      size="icon"
+                                      className="h-7 w-7 text-muted-foreground hover:text-foreground"
                                       onClick={() =>
                                         void copyAssistantMessageText(
                                           `${m.id}-${i}`,
@@ -255,15 +255,9 @@ export function SharedChatContent({
                                     >
                                       {copiedAssistantMessageKey ===
                                       `${m.id}-${i}` ? (
-                                        <>
-                                          <Check className="mr-1 h-3.5 w-3.5" />
-                                          Copied
-                                        </>
+                                        <Check className="h-3.5 w-3.5" />
                                       ) : (
-                                        <>
-                                          <Copy className="mr-1 h-3.5 w-3.5" />
-                                          Copy
-                                        </>
+                                        <Copy className="h-3.5 w-3.5" />
                                       )}
                                     </Button>
                                   </div>
