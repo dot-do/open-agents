@@ -15,6 +15,12 @@ import { streamdownPlugins } from "@/lib/streamdown-config";
 import { cn } from "@/lib/utils";
 import { PatchDiff } from "@pierre/diffs/react";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   AlertCircle,
   ArrowLeft,
   ArrowUp,
@@ -27,6 +33,7 @@ import {
   GitPullRequest,
   Loader2,
   MessageSquareWarning,
+  Plus,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -539,7 +546,7 @@ function InboxItemDetail({
                 />
               </button>
             ) : null}
-            {/* PR link */}
+            {/* PR: view existing or create new */}
             {item.prNumber && item.repoOwner && item.repoName ? (
               <Link
                 href={`https://github.com/${item.repoOwner}/${item.repoName}/pull/${item.prNumber}`}
@@ -551,6 +558,15 @@ function InboxItemDetail({
                 PR #{item.prNumber}
                 <ExternalLink className="h-3 w-3" />
               </Link>
+            ) : hasDiff ? (
+              <button
+                type="button"
+                onClick={onNavigate}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Create PR
+              </button>
             ) : null}
             {/* Open session */}
             <button
@@ -565,68 +581,63 @@ function InboxItemDetail({
         </div>
       </div>
 
-      {/* Main content area — either thread or diff */}
-      <div className="flex min-h-0 flex-1">
-        {/* Thread view */}
-        <div
-          className={cn(
-            "flex-1 overflow-y-auto",
-            showDiff && hasDiff ? "border-r border-border" : "",
-          )}
-        >
-          <div className="mx-auto max-w-2xl px-6 py-5">
-            {thread.length === 0 ? (
-              <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-                No messages yet
-              </div>
-            ) : (
-              <div className="space-y-5">
-                {thread.map((msg) => (
-                  <div key={msg.id}>
-                    {msg.role === "user" ? (
-                      <div>
-                        <div className="mb-1.5 text-xs font-medium text-muted-foreground">
-                          You
-                        </div>
-                        <div className="rounded-lg bg-primary/5 px-4 py-3">
-                          <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-                            {msg.text}
-                          </p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div>
-                        <div className="mb-1.5 text-xs font-medium text-muted-foreground">
-                          Agent
-                        </div>
-                        <div className="min-w-0 overflow-hidden pl-0.5">
-                          <Streamdown
-                            mode="static"
-                            isAnimating={false}
-                            plugins={streamdownPlugins}
-                          >
-                            {msg.text}
-                          </Streamdown>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-                <div ref={threadEndRef} />
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Diff panel (side-by-side when open) */}
-        {showDiff && hasDiff && item.cachedDiff ? (
-          <div className="w-[50%] shrink-0 overflow-y-auto">
-            <div className="p-4">
-              <InlineDiffViewer diff={item.cachedDiff} />
+      {/* Thread view */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-2xl px-6 py-5">
+          {thread.length === 0 ? (
+            <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
+              No messages yet
             </div>
-          </div>
-        ) : null}
+          ) : (
+            <div className="space-y-5">
+              {thread.map((msg) => (
+                <div key={msg.id}>
+                  {msg.role === "user" ? (
+                    <div>
+                      <div className="mb-1.5 text-xs font-medium text-muted-foreground">
+                        You
+                      </div>
+                      <div className="rounded-lg bg-primary/5 px-4 py-3">
+                        <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                          {msg.text}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="mb-1.5 text-xs font-medium text-muted-foreground">
+                        Agent
+                      </div>
+                      <div className="min-w-0 overflow-hidden pl-0.5">
+                        <Streamdown
+                          mode="static"
+                          isAnimating={false}
+                          plugins={streamdownPlugins}
+                        >
+                          {msg.text}
+                        </Streamdown>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+              <div ref={threadEndRef} />
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Diff dialog (modal) */}
+      {hasDiff && item.cachedDiff ? (
+        <Dialog open={showDiff} onOpenChange={setShowDiff}>
+          <DialogContent className="max-h-[85vh] max-w-4xl overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Changes</DialogTitle>
+            </DialogHeader>
+            <InlineDiffViewer diff={item.cachedDiff} />
+          </DialogContent>
+        </Dialog>
+      ) : null}
 
       {/* Reply input */}
       {item.chatId ? (
