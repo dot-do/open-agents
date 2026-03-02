@@ -1,9 +1,12 @@
+import { gateway } from "ai";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import type { WebAgentUIMessage } from "@/app/types";
 import { DiffsProvider } from "@/components/diffs-provider";
 import { getChatById, getChatMessages } from "@/lib/db/sessions";
 import { getSessionByIdCached } from "@/lib/db/sessions-cache";
+import { getUserPreferences } from "@/lib/db/user-preferences";
+import { type AvailableModel, getModelDisplayName } from "@/lib/models";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { SessionChatContent } from "./session-chat-content";
 import { SessionChatProvider } from "./session-chat-context";
@@ -11,6 +14,13 @@ import { SessionChatProvider } from "./session-chat-context";
 interface SessionChatPageProps {
   params: Promise<{ sessionId: string; chatId: string }>;
 }
+
+type SessionChatModelOption = {
+  id: string;
+  label: string;
+  description: string;
+  isVariant: boolean;
+};
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -42,6 +52,51 @@ async function getChatByIdWithRetry(
     }
   }
   return undefined;
+}
+
+async function getSessionChatModelOptions(
+  userId: string,
+): Promise<SessionChatModelOption[]> {
+  const [preferences, availableModelsResult] = await Promise.all([
+    getUserPreferences(userId),
+    gateway
+      .getAvailableModels()
+      .catch(() => ({ models: [] as AvailableModel[] })),
+  ]);
+
+  const languageModels = availableModelsResult.models.filter(
+    (model) => model.modelType === "language",
+  );
+
+  const modelNameById = new Map(
+    languageModels.map((model) => [model.id, getModelDisplayName(model)]),
+  );
+
+  const baseModelOptions: SessionChatModelOption[] = languageModels.map(
+    (model) => ({
+      id: model.id,
+      label: getModelDisplayName(model),
+      description: model.id,
+      isVariant: false,
+    }),
+  );
+
+  const optionIds = new Set(baseModelOptions.map((option) => option.id));
+  const variantOptions: SessionChatModelOption[] = preferences.modelVariants
+    .filter((variant) => !optionIds.has(variant.id))
+    .map((variant) => {
+      const baseModelName = modelNameById.get(variant.baseModelId);
+      return {
+        id: variant.id,
+        label: variant.name,
+        description: baseModelName
+          ? `Variant of ${baseModelName}`
+          : `Variant of ${variant.baseModelId}`,
+        isVariant: true,
+      };
+    });
+
+  return [...baseModelOptions, ...variantOptions];
 }
 
 export async function generateMetadata({
@@ -82,18 +137,22 @@ export default async function SessionChatPage({
     redirect("/");
   }
 
-  // Fetch chat and messages in parallel
-  const [chat, dbMessages] = await Promise.all([
+  // Fetch chat, messages, and model options in parallel
+  const [chat, dbMessages, modelOptions] = await Promise.all([
     getChatByIdWithRetry(chatId, sessionId),
     getChatMessages(chatId),
+    getSessionChatModelOptions(session.user.id),
   ]);
+
   if (!chat) {
     if (isOptimisticChatId(chatId)) {
       redirect(`/sessions/${sessionId}`);
     }
     notFound();
   }
+
   const initialMessages = dbMessages.map((m) => m.parts as WebAgentUIMessage);
+
   return (
     <DiffsProvider>
       <SessionChatProvider
@@ -101,7 +160,7 @@ export default async function SessionChatPage({
         chat={chat}
         initialMessages={initialMessages}
       >
-        <SessionChatContent />
+        <SessionChatContent modelOptions={modelOptions} />
       </SessionChatProvider>
     </DiffsProvider>
   );

@@ -66,7 +66,6 @@ import {
 import { useAudioRecording } from "@/hooks/use-audio-recording";
 import { useFileSuggestions } from "@/hooks/use-file-suggestions";
 import { useImageAttachments } from "@/hooks/use-image-attachments";
-import { useModelOptions } from "@/hooks/use-model-options";
 import { useScrollToBottom } from "@/hooks/use-scroll-to-bottom";
 import { useSessionChats } from "@/hooks/use-session-chats";
 import { useSlashCommands } from "@/hooks/use-slash-commands";
@@ -637,7 +636,18 @@ function ShareDialog({
   );
 }
 
-export function SessionChatContent() {
+type SessionChatModelOption = {
+  id: string;
+  label: string;
+  description: string;
+  isVariant: boolean;
+};
+
+interface SessionChatContentProps {
+  modelOptions: SessionChatModelOption[];
+}
+
+export function SessionChatContent({ modelOptions }: SessionChatContentProps) {
   const router = useRouter();
   const [input, setInput] = useState("");
   const [isCreatingSandbox, setIsCreatingSandbox] = useState(false);
@@ -768,7 +778,6 @@ export function SessionChatContent() {
     clearChatTitle,
     refreshChats,
   } = useSessionChats(session.id);
-  const { modelOptions } = useModelOptions();
   const selectedModelLabel = useMemo(() => {
     if (!chatInfo.modelId) {
       return "";
@@ -2580,6 +2589,7 @@ export function SessionChatContent() {
                     >
                       <ModelSelectorCompact
                         value={chatInfo.modelId}
+                        modelOptions={modelOptions}
                         onChange={(modelId) => {
                           void handleModelChange(modelId);
                         }}

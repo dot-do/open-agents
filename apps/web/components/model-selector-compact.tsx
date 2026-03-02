@@ -2,7 +2,6 @@
 
 import { CheckIcon, ChevronDown } from "lucide-react";
 import { useState } from "react";
-import { useModelOptions } from "@/hooks/use-model-options";
 import { DEFAULT_MODEL_ID } from "@/lib/models";
 import { cn } from "@/lib/utils";
 import {
@@ -19,17 +18,25 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 
+type ModelSelectorOption = {
+  id: string;
+  label: string;
+  description: string;
+  isVariant: boolean;
+};
+
 interface ModelSelectorCompactProps {
   value: string;
   onChange: (modelId: string) => void;
+  modelOptions: ModelSelectorOption[];
 }
 
 export function ModelSelectorCompact({
   value,
   onChange,
+  modelOptions,
 }: ModelSelectorCompactProps) {
   const [open, setOpen] = useState(false);
-  const { modelOptions, loading } = useModelOptions();
 
   const handleSelect = (modelId: string) => {
     onChange(modelId);
@@ -37,13 +44,11 @@ export function ModelSelectorCompact({
   };
 
   const selectedModel = modelOptions.find((model) => model.id === value);
-  const displayText = loading
-    ? "Loading..."
-    : selectedModel
-      ? selectedModel.label
-      : value.startsWith("variant:")
-        ? `${value} (missing)`
-        : value;
+  const displayText = selectedModel
+    ? selectedModel.label
+    : value.startsWith("variant:")
+      ? `${value} (missing)`
+      : value;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -60,9 +65,7 @@ export function ModelSelectorCompact({
         <Command>
           <CommandInput placeholder="Search models..." />
           <CommandList>
-            <CommandEmpty>
-              {loading ? "Loading..." : "No models found."}
-            </CommandEmpty>
+            <CommandEmpty>No models found.</CommandEmpty>
             <CommandGroup>
               {modelOptions.map((modelOption) => (
                 <CommandItem
