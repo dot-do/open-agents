@@ -97,17 +97,41 @@ export function PreferencesSection() {
   const defaultModelValue = preferences?.defaultModelId ?? DEFAULT_MODEL_ID;
   const subagentModelValue = preferences?.defaultSubagentModelId ?? "auto";
 
+  const modelOptionsWithVariants = useMemo(() => {
+    const userVariants = preferences?.modelVariants ?? [];
+
+    if (userVariants.length === 0) {
+      return modelOptions;
+    }
+
+    const optionIds = new Set(modelOptions.map((option) => option.id));
+    const missingVariantOptions: ModelOption[] = userVariants
+      .filter((variant) => !optionIds.has(variant.id))
+      .map((variant) => ({
+        id: variant.id,
+        label: variant.name,
+        description: `Variant of ${variant.baseModelId}`,
+        isVariant: true,
+      }));
+
+    return [...modelOptions, ...missingVariantOptions];
+  }, [modelOptions, preferences?.modelVariants]);
+
   const defaultModelOptions = useMemo(
-    () => withMissingSelectedOption(modelOptions, defaultModelValue),
-    [defaultModelValue, modelOptions],
+    () =>
+      withMissingSelectedOption(modelOptionsWithVariants, defaultModelValue),
+    [defaultModelValue, modelOptionsWithVariants],
   );
 
   const subagentModelOptions = useMemo(
     () =>
       subagentModelValue === "auto"
-        ? modelOptions
-        : withMissingSelectedOption(modelOptions, subagentModelValue),
-    [modelOptions, subagentModelValue],
+        ? modelOptionsWithVariants
+        : withMissingSelectedOption(
+            modelOptionsWithVariants,
+            subagentModelValue,
+          ),
+    [modelOptionsWithVariants, subagentModelValue],
   );
 
   const handleModelChange = async (modelId: string) => {
