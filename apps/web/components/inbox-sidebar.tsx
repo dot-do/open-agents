@@ -105,6 +105,7 @@ export function InboxSidebar({
     [sessions],
   );
   const displayedSessions = showArchived ? archivedSessions : activeSessions;
+  const showLoadingSkeleton = sessionsLoading && sessions.length === 0;
 
   const handleSessionClick = useCallback(
     (sessionId: string) => {
@@ -189,7 +190,7 @@ export function InboxSidebar({
 
       {/* Session list */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {sessionsLoading ? (
+        {showLoadingSkeleton ? (
           <div className="space-y-1 p-2">
             {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="space-y-1.5 rounded-md px-3 py-2.5">

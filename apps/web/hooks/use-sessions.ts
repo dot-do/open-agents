@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import type { Chat, Session } from "@/lib/db/schema";
 import { fetcher } from "@/lib/swr";
@@ -59,6 +59,7 @@ function overlaysEqual(
 export function useSessions(options?: UseSessionsOptions) {
   const enabled = options?.enabled ?? true;
   const [, setOverlayVersion] = useState(0);
+  const lastNonEmptySessionsRef = useRef<SessionWithUnread[]>([]);
   const { mutate: globalMutate } = useSWRConfig();
   const fallbackData = options?.initialData
     ? { sessions: options.initialData }
@@ -90,7 +91,7 @@ export function useSessions(options?: UseSessionsOptions) {
     },
   );
 
-  const sessions = (data?.sessions ?? []).map((session) => {
+  const mergedSessions = (data?.sessions ?? []).map((session) => {
     const overlay = sessionStreamingOverlays.get(session.id);
     if (!overlay || session.hasStreaming) {
       return session;
@@ -101,6 +102,25 @@ export function useSessions(options?: UseSessionsOptions) {
       hasStreaming: true,
     };
   });
+
+  useEffect(() => {
+    if (mergedSessions.length > 0) {
+      lastNonEmptySessionsRef.current = mergedSessions;
+      return;
+    }
+
+    if (!enabled) {
+      lastNonEmptySessionsRef.current = [];
+    }
+  }, [enabled, mergedSessions]);
+
+  const sessions =
+    mergedSessions.length === 0 &&
+    isLoading &&
+    lastNonEmptySessionsRef.current.length > 0
+      ? lastNonEmptySessionsRef.current
+      : mergedSessions;
+  const loading = isLoading && sessions.length === 0;
 
   useEffect(() => {
     if (!data?.sessions || sessionStreamingOverlays.size === 0) {
@@ -273,7 +293,7 @@ export function useSessions(options?: UseSessionsOptions) {
 
   return {
     sessions,
-    loading: isLoading,
+    loading,
     error,
     createSession,
     archiveSession,
