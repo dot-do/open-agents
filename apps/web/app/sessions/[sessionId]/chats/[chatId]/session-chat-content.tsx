@@ -64,6 +64,7 @@ import { useFileSuggestions } from "@/hooks/use-file-suggestions";
 import { useImageAttachments } from "@/hooks/use-image-attachments";
 import { useScrollToBottom } from "@/hooks/use-scroll-to-bottom";
 import { useSessionChats } from "@/hooks/use-session-chats";
+import { useSessions } from "@/hooks/use-sessions";
 import { useSlashCommands } from "@/hooks/use-slash-commands";
 import { isChatInFlight as isChatInFlightStatus } from "@/lib/chat-streaming-state";
 import { ACCEPT_IMAGE_TYPES, isValidImageType } from "@/lib/image-utils";
@@ -797,6 +798,7 @@ export function SessionChatContent({ initialModels }: SessionChatContentProps) {
     clearChatTitle,
     refreshChats,
   } = useSessionChats(session.id);
+  const { setSessionStreaming } = useSessions({ enabled: false });
   const hasInitialModels = initialModels.length > 0;
   const { data: modelsData, isLoading: modelsLoading } = useSWR<ModelsResponse>(
     "/api/models",
@@ -1642,6 +1644,7 @@ export function SessionChatContent({ initialModels }: SessionChatContentProps) {
     // confirms the stream has actually ended.
     if (shouldClearStreaming && isMountedRef.current) {
       void setChatStreaming(chatInfo.id, false);
+      void setSessionStreaming(session.id, false);
     }
     if (becameError && pendingOptimisticTitleChatIdRef.current) {
       void clearChatTitle(pendingOptimisticTitleChatIdRef.current);
@@ -1666,7 +1669,9 @@ export function SessionChatContent({ initialModels }: SessionChatContentProps) {
   }, [
     status,
     chatInfo.id,
+    session.id,
     setChatStreaming,
+    setSessionStreaming,
     clearChatTitle,
     requestStatusSync,
     refreshGitStatus,
@@ -2501,6 +2506,7 @@ export function SessionChatContent({ initialModels }: SessionChatContentProps) {
                 workingStartedAtRef.current = Date.now();
                 setHasPendingResponse(true);
                 void setChatStreaming(chatInfo.id, true);
+                void setSessionStreaming(session.id, true);
                 try {
                   await sendMessage({ text: messageText, files });
                 } catch (err) {
@@ -2513,6 +2519,7 @@ export function SessionChatContent({ initialModels }: SessionChatContentProps) {
                   }
                   setHasPendingResponse(false);
                   void setChatStreaming(chatInfo.id, false);
+                  void setSessionStreaming(session.id, false);
                   console.error("Failed to send message:", err);
                 }
               }}

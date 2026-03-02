@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback, useEffect, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import type { Chat, Session } from "@/lib/db/schema";
 import { fetcher } from "@/lib/swr";
@@ -28,15 +29,142 @@ interface CreateSessionResponse {
   chat: Chat;
 }
 
+type SessionStreamingOverlay = {
+  setAt: number;
+  seenServerStreaming: boolean;
+};
+
+const STREAMING_RACE_GRACE_MS = 4_000;
+const STREAMING_REFRESH_INTERVAL_MS = 1_000;
+const IDLE_REFRESH_INTERVAL_MS = 8_000;
+const UNFOCUSED_REFRESH_INTERVAL_MS = 15_000;
+
+const sessionStreamingOverlays = new Map<string, SessionStreamingOverlay>();
+
+function overlaysEqual(
+  left: SessionStreamingOverlay | undefined,
+  right: SessionStreamingOverlay,
+): boolean {
+  return (
+    left?.setAt === right.setAt &&
+    left?.seenServerStreaming === right.seenServerStreaming
+  );
+}
+
 export function useSessions(options?: { enabled?: boolean }) {
   const enabled = options?.enabled ?? true;
+  const [, setOverlayVersion] = useState(0);
+  const { mutate: globalMutate } = useSWRConfig();
+
   const { data, error, isLoading, mutate } = useSWR<SessionsResponse>(
     enabled ? "/api/sessions" : null,
     fetcher,
-  );
-  const { mutate: globalMutate } = useSWRConfig();
+    {
+      refreshInterval: (latestData) => {
+        const hasStreamingSession =
+          latestData?.sessions.some((session) => session.hasStreaming) ?? false;
+        const hasOptimisticStreaming = sessionStreamingOverlays.size > 0;
 
-  const sessions = data?.sessions ?? [];
+        if (hasStreamingSession || hasOptimisticStreaming) {
+          return STREAMING_REFRESH_INTERVAL_MS;
+        }
+
+        if (typeof document !== "undefined" && !document.hasFocus()) {
+          return UNFOCUSED_REFRESH_INTERVAL_MS;
+        }
+
+        return IDLE_REFRESH_INTERVAL_MS;
+      },
+      refreshWhenHidden: false,
+      revalidateOnFocus: true,
+    },
+  );
+
+  const sessions = (data?.sessions ?? []).map((session) => {
+    const overlay = sessionStreamingOverlays.get(session.id);
+    if (!overlay || session.hasStreaming) {
+      return session;
+    }
+
+    return {
+      ...session,
+      hasStreaming: true,
+    };
+  });
+
+  useEffect(() => {
+    if (!data?.sessions || sessionStreamingOverlays.size === 0) {
+      return;
+    }
+
+    const sessionsById = new Map(data.sessions.map((session) => [session.id, session]));
+    let changed = false;
+
+    for (const [sessionId, overlay] of sessionStreamingOverlays) {
+      const session = sessionsById.get(sessionId);
+
+      if (!session) {
+        sessionStreamingOverlays.delete(sessionId);
+        changed = true;
+        continue;
+      }
+
+      if (session.hasStreaming) {
+        if (!overlay.seenServerStreaming) {
+          const nextOverlay: SessionStreamingOverlay = {
+            ...overlay,
+            seenServerStreaming: true,
+          };
+          sessionStreamingOverlays.set(sessionId, nextOverlay);
+          changed = true;
+        }
+        continue;
+      }
+
+      const ageMs = Date.now() - overlay.setAt;
+      if (overlay.seenServerStreaming || ageMs > STREAMING_RACE_GRACE_MS) {
+        sessionStreamingOverlays.delete(sessionId);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      setOverlayVersion((value) => value + 1);
+    }
+  }, [data?.sessions]);
+
+  const setSessionStreaming = useCallback(
+    async (sessionId: string, isStreaming: boolean) => {
+      if (isStreaming) {
+        const nextOverlay: SessionStreamingOverlay = {
+          setAt: Date.now(),
+          seenServerStreaming: false,
+        };
+        if (!overlaysEqual(sessionStreamingOverlays.get(sessionId), nextOverlay)) {
+          sessionStreamingOverlays.set(sessionId, nextOverlay);
+          setOverlayVersion((value) => value + 1);
+        }
+      } else if (sessionStreamingOverlays.delete(sessionId)) {
+        setOverlayVersion((value) => value + 1);
+      }
+
+      await globalMutate<SessionsResponse>(
+        "/api/sessions",
+        (current) =>
+          current
+            ? {
+                sessions: current.sessions.map((session) =>
+                  session.id === sessionId
+                    ? { ...session, hasStreaming: isStreaming }
+                    : session,
+                ),
+              }
+            : current,
+        { revalidate: false },
+      );
+    },
+    [globalMutate],
+  );
 
   const createSession = async (input: CreateSessionInput) => {
     const res = await fetch("/api/sessions", {
@@ -135,6 +263,7 @@ export function useSessions(options?: { enabled?: boolean }) {
     error,
     createSession,
     archiveSession,
+    setSessionStreaming,
     refreshSessions: mutate,
   };
 }
