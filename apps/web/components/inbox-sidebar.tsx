@@ -69,9 +69,7 @@ function PrBadge({
     );
   }
 
-  return (
-    <span className="text-[10px] text-muted-foreground">#{prNumber}</span>
-  );
+  return <span className="text-[10px] text-muted-foreground">#{prNumber}</span>;
 }
 
 export function InboxSidebar({
@@ -190,9 +188,7 @@ export function InboxSidebar({
                   type="button"
                   onClick={() => handleSessionClick(session.id)}
                   className={`group flex w-full items-start gap-2.5 rounded-lg px-3 py-2.5 text-left transition-colors ${
-                    isActive
-                      ? "bg-secondary"
-                      : "hover:bg-muted/50"
+                    isActive ? "bg-secondary" : "hover:bg-muted/50"
                   }`}
                 >
                   {/* Status dot */}

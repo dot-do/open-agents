@@ -34,10 +34,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import useSWR from "swr";
-import type {
-  WebAgentUIMessage,
-  WebAgentUIMessagePart,
-} from "@/app/types";
+import type { WebAgentUIMessage, WebAgentUIMessagePart } from "@/app/types";
 import { FileSuggestionsDropdown } from "@/components/file-suggestions-dropdown";
 import { ImageAttachmentsPreview } from "@/components/image-attachments-preview";
 import { ModelSelectorCompact } from "@/components/model-selector-compact";
@@ -768,13 +765,7 @@ export function SessionChatContent({ initialModels }: SessionChatContentProps) {
     updateSessionPullRequest,
     checkBranchAndPr,
   } = useSessionChatContext();
-  const {
-    messages,
-    error,
-    sendMessage,
-    status,
-    addToolOutput,
-  } = chat;
+  const { messages, error, sendMessage, status, addToolOutput } = chat;
   const {
     markChatRead,
     setChatStreaming,
@@ -2317,7 +2308,9 @@ export function SessionChatContent({ initialModels }: SessionChatContentProps) {
               {showThinkingIndicator && (
                 <div className="flex items-center gap-2 py-2">
                   <span className="h-2 w-2 rounded-full bg-foreground/50 animate-pulse" />
-                  <span className="text-xs text-muted-foreground">Working...</span>
+                  <span className="text-xs text-muted-foreground">
+                    Working...
+                  </span>
                 </div>
               )}
             </div>
