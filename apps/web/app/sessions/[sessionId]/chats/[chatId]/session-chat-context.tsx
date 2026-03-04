@@ -110,6 +110,8 @@ interface ModelsResponse {
   }>;
 }
 
+const EMPTY_MODELS: ModelsResponse["models"] = [];
+
 type RetryChatStreamOptions = {
   auto?: boolean;
   strategy?: "hard" | "soft";
@@ -318,7 +320,7 @@ export function SessionChatProvider({
     useSWR<ModelsResponse>("/api/models", fetcher, {
       fallbackData: hasInitialModels ? { models: initialModels } : undefined,
     });
-  const models = modelsResponse?.models ?? [];
+  const models = modelsResponse?.models ?? EMPTY_MODELS;
   const contextLimit = useMemo(
     () =>
       resolveContextLimitForModel(
