@@ -20,6 +20,7 @@
   "scripts": {
     "cli": "AI_SDK_LOG_WARNINGS=true NODE_ENV=development OPEN_HARNESS_URL=http://localhost:3000 bun run apps/cli/index.ts",
     "web": "cd apps/web/ && bun run dev",
+    "web:bot": "AGENT_WEB_AUTH_ENABLED=true AGENT_WEB_AUTH_CODE=${AGENT_WEB_AUTH_CODE:-local-agent-code} AGENT_WEB_AUTH_USER_ID=${AGENT_WEB_AUTH_USER_ID:-agent-user} JWE_SECRET=${JWE_SECRET:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY} bun run web",
     "dev": "turbo dev",
     "build": "turbo build",
     "typecheck": "turbo typecheck",

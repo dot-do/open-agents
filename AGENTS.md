@@ -35,6 +35,7 @@ Neon database branching is enabled in the Vercel project settings. Every preview
 turbo dev              # Run CLI agent (from root)
 bun run cli            # Alternative: run CLI directly
 bun run web            # Run web app
+bun run web:bot       # Run web app with agent auth bootstrap defaults enabled
 
 # Quality checks (REQUIRED after making any changes)
 bun run ci                                 # Required: run format check, lint, typecheck, and tests
@@ -62,6 +63,43 @@ bun test --watch                # Watch mode
 
 - Run project checks through package scripts (for example `bun run ci`, `bun run --cwd apps/web db:check`).
 - Prefer `bun run <script>` over invoking tool binaries directly (`bunx`, `bun x`, `tsc`, `eslint`, etc.) so local runs match CI behavior.
+
+## Agent-browser authenticated web validation
+
+Use `bun run web:bot` (from repo root) when a bot/agent needs to run authenticated web checks automatically.
+
+When to use each dev command:
+
+- `bun run web`: normal development and manual login flows.
+- `bun run web:bot`: automated/headless validation where the bot should bootstrap into an authenticated session.
+
+`bun run web:bot` runs the web app with local agent-auth defaults:
+
+- `AGENT_WEB_AUTH_ENABLED=true`
+- `AGENT_WEB_AUTH_CODE=${AGENT_WEB_AUTH_CODE:-local-agent-code}`
+- `AGENT_WEB_AUTH_USER_ID=${AGENT_WEB_AUTH_USER_ID:-agent-user}`
+- `JWE_SECRET=${JWE_SECRET:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY}`
+
+Prerequisites for successful auth bootstrap:
+
+- `POSTGRES_URL` must be set (web app DB access is required).
+- `AGENT_WEB_AUTH_USER_ID` must refer to an existing user row.
+
+The bootstrap endpoint is:
+
+- `GET /api/auth/agent/signin?code=<AGENT_WEB_AUTH_CODE>&next=/sessions`
+
+Notes:
+
+- This endpoint is intentionally disabled unless `AGENT_WEB_AUTH_ENABLED=true`.
+- It returns `404` in production deployments.
+
+Recommended automated flow:
+
+1. Start server with `bun run web:bot`.
+2. Open the bootstrap URL above in `agent-browser`.
+3. Confirm authenticated state via `/api/auth/info` (`user` should be present).
+4. Navigate to the page under test.
 
 ## Git Commands
 
