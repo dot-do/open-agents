@@ -262,9 +262,7 @@ export function TaskRenderer({
       {/* Subagent type */}
       {subagentType && (
         <div>
-          <span className="text-xs text-muted-foreground">
-            Subagent type:{" "}
-          </span>
+          <span className="text-xs text-muted-foreground">Subagent type: </span>
           <span className="text-sm text-foreground">{subagentType}</span>
         </div>
       )}
@@ -273,10 +271,7 @@ export function TaskRenderer({
       {isComplete && (
         <div className="text-sm text-muted-foreground">
           Complete ({toolCount} tool call{toolCount === 1 ? "" : "s"}
-          {tokenCount !== null
-            ? `, ${formatTokens(tokenCount)} tokens`
-            : ""}
-          )
+          {tokenCount !== null ? `, ${formatTokens(tokenCount)} tokens` : ""})
         </div>
       )}
     </div>
