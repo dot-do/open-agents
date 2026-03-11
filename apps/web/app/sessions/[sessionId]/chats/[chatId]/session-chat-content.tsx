@@ -414,29 +414,22 @@ function ActivityStatusBar({
   const elapsedMs = useStreamingElapsedMs(isStreaming, startedAtMs);
 
   let label = "Done";
-  let indicatorClassName = "bg-green-500";
 
   if (effectiveSummary.errorCount > 0) {
     label = "Error";
-    indicatorClassName = "bg-red-500";
   } else if (effectiveSummary.deniedCount > 0) {
     label = "Denied";
-    indicatorClassName = "bg-red-500";
   } else if (effectiveSummary.interruptedCount > 0 && !isStreaming) {
     label = "Interrupted";
-    indicatorClassName = "border border-yellow-500 bg-transparent";
   } else if (isStreaming && effectiveSummary.toolCallCount === 0) {
     label = effectiveSummary.hasReasoning ? "Thinking..." : "Working...";
-    indicatorClassName = "bg-yellow-500";
   } else if (isStreaming) {
     label = "Working...";
-    indicatorClassName = "bg-yellow-500";
   } else if (
     effectiveSummary.hasReasoning &&
     effectiveSummary.toolCallCount === 0
   ) {
     label = "Reasoning hidden";
-    indicatorClassName = "bg-muted-foreground/60";
   }
 
   const details: { label: string; className?: string }[] = [];
@@ -469,24 +462,20 @@ function ActivityStatusBar({
 
   return (
     <div className="flex justify-start">
-      <div className="inline-flex max-w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-full border border-border/60 bg-secondary/30 px-3 py-1.5 text-xs text-muted-foreground">
+      <div className="inline-flex max-w-full flex-wrap items-center gap-x-2 gap-y-1 py-0.5 text-xs text-muted-foreground">
         <span
           className={cn(
-            "size-2 shrink-0 rounded-full",
-            indicatorClassName,
-            isStreaming &&
-              indicatorClassName !==
-                "border border-yellow-500 bg-transparent" &&
-              "animate-pulse",
+            "size-1.5 shrink-0 rounded-full bg-muted-foreground/50",
+            isStreaming && "animate-pulse",
           )}
         />
-        <span className="font-medium text-foreground">{label}</span>
+        <span>{label}</span>
         {details.map((detail) => (
           <span
             key={detail.label}
-            className="inline-flex items-center gap-2 text-muted-foreground"
+            className="inline-flex items-center gap-2"
           >
-            <span className="text-muted-foreground/40">•</span>
+            <span className="text-muted-foreground/30">·</span>
             <span className={detail.className}>{detail.label}</span>
           </span>
         ))}
