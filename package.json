@@ -28,6 +28,7 @@
     "format": "biome format --write .",
     "format:check": "biome format .",
     "ci": "bun run format:check && bun run lint && bun run typecheck && bun test && bun run --cwd apps/web db:check",
+    "test:verbose": "bun test --reporter=junit --reporter-outfile /dev/stdout",
     "build:installer": "bun run scripts/build-installer.ts",
     "build:release-artifacts": "bun run scripts/build-release-artifacts.ts",
     "release:local": "bun run scripts/release-local.ts",
