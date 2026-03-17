@@ -26,17 +26,11 @@ const startCalls: Array<{
   workflow: unknown;
   args: unknown[];
 }> = [];
-const resolveChatModelSelectionCalls: Array<{
-  selectedModelId: string | null | undefined;
-}> = [];
-
 let sessionRecord: TestSessionRecord | null;
 let chatRecord: TestChatRecord | null;
 let currentAuthSession: { user: { id: string } } | null;
 let sandboxIsActive = true;
 let workflowStartRunId = "workflow-run-1";
-let mainModelSelection = { id: "anthropic/claude-haiku-4.5" };
-let subagentModelSelection = { id: "openai/gpt-5-mini" };
 let preferences: {
   defaultSubagentModelId?: string;
   modelVariants?: unknown[];
@@ -99,20 +93,6 @@ mock.module("./_lib/message-persistence", () => ({
   },
 }));
 
-mock.module("./_lib/model-selection", () => ({
-  resolveChatModelSelection: (params: {
-    selectedModelId: string | null | undefined;
-  }) => {
-    resolveChatModelSelectionCalls.push({
-      selectedModelId: params.selectedModelId,
-    });
-
-    return params.selectedModelId === "subagent-model"
-      ? subagentModelSelection
-      : mainModelSelection;
-  },
-}));
-
 const routeModulePromise = import("./route");
 
 function createRequest(body: string) {
@@ -146,7 +126,6 @@ describe("/api/chat route", () => {
     scheduleLatestMessagePersistenceCalls.length = 0;
     updateSessionCalls.length = 0;
     startCalls.length = 0;
-    resolveChatModelSelectionCalls.length = 0;
     sandboxIsActive = true;
     workflowStartRunId = "workflow-run-1";
     currentAuthSession = {
@@ -154,8 +133,6 @@ describe("/api/chat route", () => {
         id: "user-1",
       },
     };
-    mainModelSelection = { id: "anthropic/claude-haiku-4.5" };
-    subagentModelSelection = { id: "openai/gpt-5-mini" };
     preferences = { modelVariants: [] };
     sessionRecord = {
       id: "session-1",
@@ -216,13 +193,19 @@ describe("/api/chat route", () => {
         },
       ],
     });
-    expect(resolveChatModelSelectionCalls).toEqual([{ selectedModelId: null }]);
   });
 
   test("includes the subagent model selection when configured", async () => {
     preferences = {
-      modelVariants: [],
-      defaultSubagentModelId: "subagent-model",
+      modelVariants: [
+        {
+          id: "variant:subagent-model",
+          name: "Subagent model",
+          baseModelId: "openai/gpt-5-mini",
+          providerOptions: {},
+        },
+      ],
+      defaultSubagentModelId: "variant:subagent-model",
     };
 
     const { POST } = await routeModulePromise;
@@ -233,10 +216,6 @@ describe("/api/chat route", () => {
     expect(startCalls[0]?.args[0]).toMatchObject({
       subagentModel: { id: "openai/gpt-5-mini" },
     });
-    expect(resolveChatModelSelectionCalls).toEqual([
-      { selectedModelId: null },
-      { selectedModelId: "subagent-model" },
-    ]);
   });
 
   test("returns 401 when not authenticated", async () => {

@@ -6,10 +6,6 @@ import type { AvailableModel } from "./models";
 const MODELS_DEV_URL = "https://models.dev/api.json";
 const MODELS_DEV_TIMEOUT_MS = 750;
 
-type GatewayModel = Awaited<
-  ReturnType<typeof gateway.getAvailableModels>
->["models"][number];
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -89,7 +85,7 @@ function resolveContextLimit(
 }
 
 function addContextWindow(
-  model: GatewayModel,
+  model: AvailableModel,
   contextMap: Map<string, number>,
 ): AvailableModel {
   const contextLimit = resolveContextLimit(model.id, contextMap);
