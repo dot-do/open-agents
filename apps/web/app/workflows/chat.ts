@@ -150,9 +150,9 @@ export async function runAgentWorkflow(options: Options) {
     }
   }
 
-  if (!wasAborted) {
-    await persistAssistantMessage(options.chatId, pendingAssistantResponse);
-  }
+  // Always persist the assistant message — even on abort, save content
+  // from completed steps so mid-stream output is not lost.
+  await persistAssistantMessage(options.chatId, pendingAssistantResponse);
 
   await recordWorkflowUsage(
     options.userId,
