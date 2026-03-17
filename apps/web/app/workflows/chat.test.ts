@@ -57,11 +57,13 @@ mock.module("@/app/config", () => ({
           sendStart?: boolean;
           sendFinish?: boolean;
           originalMessages?: Array<Record<string, unknown>>;
-          messageMetadata?: (args: { part: Record<string, unknown> }) => unknown;
+          messageMetadata?: (args: {
+            part: Record<string, unknown>;
+          }) => unknown;
           onFinish?: (args: { responseMessage: unknown }) => void;
         }) => {
           const priorAssistantMessage = opts.originalMessages?.at(-1);
-          const assistantMessage =
+          const assistantMessage = (
             priorAssistantMessage?.role === "assistant"
               ? structuredClone(priorAssistantMessage)
               : {
@@ -69,7 +71,13 @@ mock.module("@/app/config", () => ({
                   role: "assistant",
                   parts: [{ type: "text", text: "Hello!" }],
                   metadata: {},
-                };
+                }
+          ) as {
+            id: string;
+            role: "assistant";
+            parts: Array<Record<string, unknown>>;
+            metadata?: unknown;
+          };
 
           streamOnFinishCallback = opts.onFinish;
           // Return an async iterable that yields parts and calls onFinish
@@ -80,10 +88,13 @@ mock.module("@/app/config", () => ({
 
                 const metadata = opts.messageMetadata?.({ part });
                 if (metadata) {
-                  assistantMessage.metadata = {
-                    ...assistantMessage.metadata,
-                    ...(metadata as Record<string, unknown>),
-                  };
+                  assistantMessage.metadata = Object.assign(
+                    {},
+                    assistantMessage.metadata as
+                      | Record<string, unknown>
+                      | undefined,
+                    metadata as Record<string, unknown>,
+                  );
                   yield {
                     type: "message-metadata",
                     messageMetadata: metadata,
@@ -218,7 +229,8 @@ describe("runAgentWorkflow", () => {
       }),
     );
 
-    const persistCalls = spies.persistAssistantMessage.mock.calls as unknown[][];
+    const persistCalls = spies.persistAssistantMessage.mock
+      .calls as unknown[][];
     const persistedMessage = persistCalls.at(-1)?.[1] as {
       metadata?: {
         lastStepFinishReason?: string;
