@@ -1,6 +1,10 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
-import { getUserById } from "@/lib/db/users";
+import {
+  getOrCreateLocalAgentAuthUser,
+  getUserById,
+  LOCAL_AGENT_AUTH_USER_ID,
+} from "@/lib/db/users";
 import { encryptJWE } from "@/lib/jwe/encrypt";
 import { SESSION_COOKIE_NAME } from "@/lib/session/constants";
 import type { Session } from "@/lib/session/types";
@@ -68,7 +72,11 @@ export async function GET(req: Request): Promise<Response> {
     return Response.json({ error: "Invalid agent auth code" }, { status: 401 });
   }
 
-  const user = await getUserById(agentUserId);
+  const user =
+    agentUserId === LOCAL_AGENT_AUTH_USER_ID &&
+    process.env.NODE_ENV !== "production"
+      ? await getOrCreateLocalAgentAuthUser()
+      : await getUserById(agentUserId);
   if (!user) {
     return Response.json(
       { error: "Configured agent user was not found" },

@@ -17,6 +17,7 @@ const encryptCalls: Array<{
 }> = [];
 
 const getUserByIdCalls: string[] = [];
+let getOrCreateLocalAgentAuthUserCallCount = 0;
 
 let currentUser: MockUser | null = {
   id: "user-1",
@@ -27,10 +28,24 @@ let currentUser: MockUser | null = {
   avatarUrl: "https://example.com/avatar.png",
 };
 
+let currentLocalAgentUser: MockUser = {
+  id: "agent-user",
+  provider: "vercel",
+  username: "agent-user",
+  email: "agent@example.com",
+  name: "Open Harness Agent",
+  avatarUrl: null,
+};
+
 mock.module("@/lib/db/users", () => ({
+  LOCAL_AGENT_AUTH_USER_ID: "agent-user",
   getUserById: async (userId: string) => {
     getUserByIdCalls.push(userId);
     return currentUser;
+  },
+  getOrCreateLocalAgentAuthUser: async () => {
+    getOrCreateLocalAgentAuthUserCallCount += 1;
+    return currentLocalAgentUser;
   },
 }));
 
@@ -80,8 +95,17 @@ describe("/api/auth/agent/signin", () => {
       name: "Agent User",
       avatarUrl: "https://example.com/avatar.png",
     };
+    currentLocalAgentUser = {
+      id: "agent-user",
+      provider: "vercel",
+      username: "agent-user",
+      email: "agent@example.com",
+      name: "Open Harness Agent",
+      avatarUrl: null,
+    };
     encryptCalls.length = 0;
     getUserByIdCalls.length = 0;
+    getOrCreateLocalAgentAuthUserCallCount = 0;
     process.env.AGENT_WEB_AUTH_ENABLED = "true";
     process.env.AGENT_WEB_AUTH_CODE = "expected-code";
     process.env.AGENT_WEB_AUTH_USER_ID = "user-1";
@@ -148,6 +172,7 @@ describe("/api/auth/agent/signin", () => {
     expect(response.status).toBe(500);
     expect(body.error).toBe("Configured agent user was not found");
     expect(getUserByIdCalls).toEqual(["user-1"]);
+    expect(getOrCreateLocalAgentAuthUserCallCount).toBe(0);
     expect(encryptCalls).toHaveLength(0);
   });
 
@@ -175,6 +200,7 @@ describe("/api/auth/agent/signin", () => {
     expect(setCookieHeader).not.toContain("Secure");
 
     expect(getUserByIdCalls).toEqual(["user-1"]);
+    expect(getOrCreateLocalAgentAuthUserCallCount).toBe(0);
     expect(encryptCalls).toHaveLength(1);
     expect(encryptCalls[0]?.expirationTime).toBe("1y");
     expect(encryptCalls[0]?.payload.authProvider).toBe("vercel");
@@ -186,6 +212,28 @@ describe("/api/auth/agent/signin", () => {
       avatar: "https://example.com/avatar.png",
     });
     expect(typeof encryptCalls[0]?.payload.created).toBe("number");
+  });
+
+  test("provisions the default local agent user for web:bot in non-production", async () => {
+    process.env.AGENT_WEB_AUTH_USER_ID = "agent-user";
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      createRequest("?code=expected-code&next=/sessions"),
+    );
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe("http://localhost/sessions");
+    expect(getUserByIdCalls).toHaveLength(0);
+    expect(getOrCreateLocalAgentAuthUserCallCount).toBe(1);
+    expect(encryptCalls).toHaveLength(1);
+    expect(encryptCalls[0]?.payload.user).toEqual({
+      id: "agent-user",
+      username: "agent-user",
+      email: "agent@example.com",
+      name: "Open Harness Agent",
+      avatar: "",
+    });
   });
 
   test("falls back to /sessions for invalid redirect targets", async () => {

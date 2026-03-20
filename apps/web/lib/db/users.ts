@@ -3,6 +3,27 @@ import { nanoid } from "nanoid";
 import { db } from "./client";
 import { users } from "./schema";
 
+const userSelection = {
+  id: users.id,
+  provider: users.provider,
+  username: users.username,
+  email: users.email,
+  name: users.name,
+  avatarUrl: users.avatarUrl,
+};
+
+export const LOCAL_AGENT_AUTH_USER_ID = "agent-user";
+const LOCAL_AGENT_AUTH_EXTERNAL_ID = "local-agent-user";
+
+type UserRecord = {
+  id: string;
+  provider: "github" | "vercel";
+  username: string;
+  email: string | null;
+  name: string | null;
+  avatarUrl: string | null;
+};
+
 /**
  * Check if a user exists in the database by ID.
  * Returns true if found, false otherwise. Lightweight query (only fetches the ID).
@@ -16,28 +37,54 @@ export async function userExists(userId: string): Promise<boolean> {
   return result.length > 0;
 }
 
-export async function getUserById(userId: string): Promise<{
-  id: string;
-  provider: "github" | "vercel";
-  username: string;
-  email: string | null;
-  name: string | null;
-  avatarUrl: string | null;
-} | null> {
+export async function getUserById(userId: string): Promise<UserRecord | null> {
   const [user] = await db
-    .select({
-      id: users.id,
-      provider: users.provider,
-      username: users.username,
-      email: users.email,
-      name: users.name,
-      avatarUrl: users.avatarUrl,
-    })
+    .select(userSelection)
     .from(users)
     .where(eq(users.id, userId))
     .limit(1);
 
   return user ?? null;
+}
+
+export async function getOrCreateLocalAgentAuthUser(): Promise<UserRecord> {
+  const existingUser = await getUserById(LOCAL_AGENT_AUTH_USER_ID);
+  if (existingUser) {
+    return existingUser;
+  }
+
+  const now = new Date();
+  const [createdUser] = await db
+    .insert(users)
+    .values({
+      id: LOCAL_AGENT_AUTH_USER_ID,
+      provider: "vercel",
+      externalId: LOCAL_AGENT_AUTH_EXTERNAL_ID,
+      accessToken: "",
+      refreshToken: null,
+      scope: null,
+      username: LOCAL_AGENT_AUTH_USER_ID,
+      email: "agent@example.com",
+      name: "Open Harness Agent",
+      avatarUrl: null,
+      tokenExpiresAt: null,
+      createdAt: now,
+      updatedAt: now,
+      lastLoginAt: now,
+    })
+    .onConflictDoNothing({ target: users.id })
+    .returning(userSelection);
+
+  if (createdUser) {
+    return createdUser;
+  }
+
+  const conflictedUser = await getUserById(LOCAL_AGENT_AUTH_USER_ID);
+  if (conflictedUser) {
+    return conflictedUser;
+  }
+
+  throw new Error("Failed to provision local agent auth user");
 }
 
 export async function upsertUser(userData: {

@@ -78,7 +78,8 @@ When to use each dev command:
 Prerequisites for successful auth bootstrap:
 
 - `POSTGRES_URL` must be set (web app DB access is required).
-- `AGENT_WEB_AUTH_USER_ID` must refer to an existing user row.
+- When `AGENT_WEB_AUTH_USER_ID` uses the default `agent-user` under `bun run web:bot`, the route will create that local dev user automatically if it does not exist.
+- Custom `AGENT_WEB_AUTH_USER_ID` values must still refer to an existing user row.
 
 The bootstrap endpoint is:
 
