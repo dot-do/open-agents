@@ -1,7 +1,7 @@
 "use client";
 
 import { isReasoningUIPart, isToolUIPart } from "ai";
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import type { WebAgentUIMessage } from "@/app/types";
 import { ToolCallsSummaryBar, type TodoInfo } from "./tool-calls-summary-bar";
 
@@ -88,17 +88,15 @@ function messageHasActiveApproval(message: WebAgentUIMessage): boolean {
 
 export type AssistantMessageGroupsProps = {
   message: WebAgentUIMessage;
+  isExpanded: boolean;
+  onExpandedChange: (isExpanded: boolean) => void;
   isStreaming: boolean;
   /** Pre-computed generation duration in ms (for completed messages) */
   durationMs: number | null;
   /** ISO timestamp of the preceding user message's createdAt (for live timer while streaming) */
   startedAt: string | null;
-  /**
-   * Render function that produces the list of group elements.
-   * Called with `isExpanded` so the caller can conditionally
-   * skip rendering collapsible groups.
-   */
-  children: (isExpanded: boolean) => ReactNode;
+  renderExpandedContent: () => ReactNode;
+  renderCollapsedContent?: () => ReactNode;
 };
 
 /**
@@ -108,13 +106,14 @@ export type AssistantMessageGroupsProps = {
  */
 export function AssistantMessageGroups({
   message,
+  isExpanded,
+  onExpandedChange,
   isStreaming,
   durationMs,
   startedAt,
-  children,
+  renderExpandedContent,
+  renderCollapsedContent,
 }: AssistantMessageGroupsProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-
   const hasCollapsible = useMemo(
     () => messageHasCollapsibleContent(message),
     [message],
@@ -136,14 +135,14 @@ export function AssistantMessageGroups({
 
   // If no collapsible content, just render children directly
   if (!hasCollapsible) {
-    return <>{children(true)}</>;
+    return <>{renderExpandedContent()}</>;
   }
 
   return (
     <>
       <ToolCallsSummaryBar
         isExpanded={effectiveExpanded}
-        onToggle={() => setIsExpanded((v) => !v)}
+        onToggle={() => onExpandedChange(!isExpanded)}
         isStreaming={isStreaming}
         toolCallCount={toolCallCount}
         changedFiles={changedFiles}
@@ -152,7 +151,9 @@ export function AssistantMessageGroups({
         startedAt={startedAt}
         statusWordSeed={message.id}
       />
-      {children(effectiveExpanded)}
+      {effectiveExpanded
+        ? renderExpandedContent()
+        : (renderCollapsedContent?.() ?? null)}
     </>
   );
 }

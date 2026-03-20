@@ -23,10 +23,8 @@ import {
   Paperclip,
   Plus,
   RefreshCw,
-  RotateCcw,
   Share2,
   Square,
-  Trash2,
   X,
 } from "lucide-react";
 import dynamic from "next/dynamic";
@@ -42,21 +40,15 @@ import {
 import useSWR from "swr";
 import type { MergePullRequestResponse } from "@/app/api/sessions/[sessionId]/merge/route";
 import type { PrDeploymentResponse } from "@/app/api/sessions/[sessionId]/pr-deployment/route";
-import type {
-  WebAgentUIMessage,
-  WebAgentUIMessagePart,
-  WebAgentUIToolPart,
-} from "@/app/types";
+import type { WebAgentUIMessage, WebAgentUIMessagePart } from "@/app/types";
+import { ChatMessageRow } from "@/components/chat-message-row";
 import { FileSuggestionsDropdown } from "@/components/file-suggestions-dropdown";
 import { ImageAttachmentsPreview } from "@/components/image-attachments-preview";
 import { ModelSelectorCompact } from "@/components/model-selector-compact";
 import { QuestionPanel } from "@/components/question-panel";
 import { SlashCommandDropdown } from "@/components/slash-command-dropdown";
-import { AssistantMessageGroups } from "@/components/assistant-message-groups";
-import { TaskGroupView } from "@/components/task-group-view";
-import { ThinkingBlock } from "@/components/thinking-block";
-import { ToolCall } from "@/components/tool-call";
 import { Button } from "@/components/ui/button";
+import { VirtualizedMessageList } from "@/components/virtualized-message-list";
 import {
   Dialog,
   DialogClose,
@@ -104,7 +96,6 @@ import { useUserPreferences } from "@/hooks/use-user-preferences";
 import {
   hasRenderableAssistantPart,
   isChatInFlight as isChatInFlightStatus,
-  shouldKeepCollapsedReasoningStreaming,
   shouldShowThinkingIndicator,
 } from "@/lib/chat-streaming-state";
 import { ACCEPT_IMAGE_TYPES, isValidImageType } from "@/lib/image-utils";
@@ -112,7 +103,6 @@ import { DEFAULT_CONTEXT_LIMIT } from "@/lib/models";
 import { getPrDeploymentRefreshInterval } from "@/lib/pr-deployment-polling";
 import { DEFAULT_SANDBOX_TIMEOUT_MS } from "@/lib/sandbox/config";
 import { fetcher } from "@/lib/swr";
-import { streamdownPlugins } from "@/lib/streamdown-config";
 import { cn } from "@/lib/utils";
 import {
   type SandboxInfo,
@@ -132,7 +122,6 @@ import {
   type SandboxCreateErrorDetails,
 } from "./sandbox-create";
 import { SandboxCreateErrorBanner } from "./sandbox-create-error-banner";
-import "streamdown/styles.css";
 
 const DiffViewer = dynamic(
   () => import("./diff-viewer").then((m) => m.DiffViewer),
@@ -159,11 +148,6 @@ const CreateRepoDialog = dynamic(
     import("@/components/create-repo-dialog").then((m) => m.CreateRepoDialog),
   { ssr: false },
 );
-const Streamdown = dynamic(
-  () => import("streamdown").then((m) => m.Streamdown),
-  { ssr: false },
-);
-
 const emptySubscribe = () => () => {};
 
 function useHasMounted() {
@@ -245,11 +229,92 @@ function getPartIdentity(part: WebAgentUIMessagePart): string {
   return `part:${part.type}`;
 }
 
-function getReasoningGroupText(parts: ReasoningMessagePart[]): string {
-  return parts
-    .map((part) => part.text)
-    .filter((text) => text.trim().length > 0)
-    .join("\n\n");
+function buildMessageRenderGroups(
+  message: WebAgentUIMessage,
+): MessageRenderGroup[] {
+  const groups: MessageRenderGroup[] = [];
+  let currentTaskGroup: TaskToolUIPart[] = [];
+  let taskGroupStartIndex = 0;
+  let taskGroupOrdinal = 0;
+  let currentReasoningGroup: ReasoningMessagePart[] = [];
+  let reasoningGroupStartIndex = 0;
+  const partIdentityCounts = new Map<string, number>();
+
+  const getStablePartRenderKey = (part: WebAgentUIMessagePart): string => {
+    const identity = getPartIdentity(part);
+
+    if (isToolUIPart(part) && part.toolCallId) {
+      return identity;
+    }
+
+    const count = partIdentityCounts.get(identity) ?? 0;
+    partIdentityCounts.set(identity, count + 1);
+    return `${identity}:${count}`;
+  };
+
+  const flushTaskGroup = () => {
+    if (currentTaskGroup.length === 0) return;
+
+    const firstTaskId =
+      currentTaskGroup.find((task) => task.toolCallId)?.toolCallId ?? null;
+
+    groups.push({
+      type: "task-group",
+      tasks: currentTaskGroup,
+      startIndex: taskGroupStartIndex,
+      renderKey: firstTaskId
+        ? `task-group:${firstTaskId}`
+        : `task-group:${taskGroupOrdinal}`,
+    });
+    currentTaskGroup = [];
+    taskGroupOrdinal += 1;
+  };
+
+  const flushReasoningGroup = () => {
+    if (currentReasoningGroup.length === 0) return;
+
+    groups.push({
+      type: "reasoning-group",
+      parts: currentReasoningGroup,
+      startIndex: reasoningGroupStartIndex,
+      renderKey: `reasoning-group:${getStablePartRenderKey(currentReasoningGroup[0])}`,
+    });
+    currentReasoningGroup = [];
+  };
+
+  message.parts.forEach((part, index) => {
+    if (isToolUIPart(part) && part.type === "tool-task") {
+      flushReasoningGroup();
+      if (currentTaskGroup.length === 0) {
+        taskGroupStartIndex = index;
+      }
+      currentTaskGroup.push(part);
+      return;
+    }
+
+    if (isReasoningUIPart(part)) {
+      flushTaskGroup();
+      if (currentReasoningGroup.length === 0) {
+        reasoningGroupStartIndex = index;
+      }
+      currentReasoningGroup.push(part);
+      return;
+    }
+
+    flushTaskGroup();
+    flushReasoningGroup();
+    groups.push({
+      type: "part",
+      part,
+      index,
+      renderKey: getStablePartRenderKey(part),
+    });
+  });
+
+  flushTaskGroup();
+  flushReasoningGroup();
+
+  return groups;
 }
 
 function isSandboxValid(sandboxInfo: SandboxInfo | null): boolean {
@@ -976,8 +1041,12 @@ export function SessionChatContent({
     fileInputRef,
     openFilePicker,
   } = useImageAttachments();
-  const { containerRef, isAtBottom, scrollToBottom } =
-    useScrollToBottom<HTMLDivElement>();
+  const messageListContainerRef = useRef<HTMLDivElement>(null);
+  const messageListContentRef = useRef<HTMLDivElement>(null);
+  const { isAtBottom, scrollToBottom } = useScrollToBottom<HTMLDivElement>({
+    containerRef: messageListContainerRef,
+    contentRef: messageListContentRef,
+  });
   const {
     session,
     chatInfo,
@@ -1047,6 +1116,7 @@ export function SessionChatContent({
     addToolApprovalResponse,
     addToolOutput,
   } = chat;
+  const addToolApprovalResponseRef = useRef(addToolApprovalResponse);
   const {
     markChatRead,
     setChatStreaming,
@@ -1054,6 +1124,11 @@ export function SessionChatContent({
     clearChatTitle,
     refreshChats,
   } = useSessionChats(session.id);
+
+  useEffect(() => {
+    addToolApprovalResponseRef.current = addToolApprovalResponse;
+  }, [addToolApprovalResponse]);
+
   const renderMessages = useMemo(
     () => (hasMounted ? messages : initialMessages),
     [hasMounted, messages, initialMessages],
@@ -1079,11 +1154,19 @@ export function SessionChatContent({
   /** Captures Date.now() when the user sends a message, so the streaming
    *  summary bar can show an accurate live timer from the actual send time. */
   const lastSendTimestampRef = useRef<number | null>(null);
+  const groupedMessageCacheRef = useRef(
+    new Map<string, MessageRenderGroup[]>(),
+  );
+  const [expandedAssistantMessages, setExpandedAssistantMessages] = useState<
+    Record<string, boolean>
+  >({});
 
   // Ensure a stop action from one chat does not suppress the in-flight state
   // after switching to a different chat.
   useEffect(() => {
     setUserStopped(false);
+    groupedMessageCacheRef.current.clear();
+    setExpandedAssistantMessages({});
   }, [chatInfo.id]);
 
   // Sync hasPendingResponse with the AI SDK status.
@@ -1150,89 +1233,41 @@ export function SessionChatContent({
     hasPendingResponse,
     isChatInFlight,
   ]);
-  const groupedRenderMessages = useMemo<GroupedRenderMessage[]>(() => {
-    return renderMessages.map((message, messageIndex) => {
-      const groups: MessageRenderGroup[] = [];
-      let currentTaskGroup: TaskToolUIPart[] = [];
-      let taskGroupStartIndex = 0;
-      let taskGroupOrdinal = 0;
-      let currentReasoningGroup: ReasoningMessagePart[] = [];
-      let reasoningGroupStartIndex = 0;
-      const partIdentityCounts = new Map<string, number>();
-
-      const getStablePartRenderKey = (part: WebAgentUIMessagePart): string => {
-        const identity = getPartIdentity(part);
-
-        if (isToolUIPart(part) && part.toolCallId) {
-          return identity;
-        }
-
-        const count = partIdentityCounts.get(identity) ?? 0;
-        partIdentityCounts.set(identity, count + 1);
-        return `${identity}:${count}`;
-      };
-
-      const flushTaskGroup = () => {
-        if (currentTaskGroup.length === 0) return;
-
-        const firstTaskId =
-          currentTaskGroup.find((task) => task.toolCallId)?.toolCallId ?? null;
-
-        groups.push({
-          type: "task-group",
-          tasks: currentTaskGroup,
-          startIndex: taskGroupStartIndex,
-          renderKey: firstTaskId
-            ? `task-group:${firstTaskId}`
-            : `task-group:${taskGroupOrdinal}`,
-        });
-        currentTaskGroup = [];
-        taskGroupOrdinal += 1;
-      };
-
-      const flushReasoningGroup = () => {
-        if (currentReasoningGroup.length === 0) return;
-
-        groups.push({
-          type: "reasoning-group",
-          parts: currentReasoningGroup,
-          startIndex: reasoningGroupStartIndex,
-          renderKey: `reasoning-group:${getStablePartRenderKey(currentReasoningGroup[0])}`,
-        });
-        currentReasoningGroup = [];
-      };
-
-      message.parts.forEach((part, index) => {
-        if (isToolUIPart(part) && part.type === "tool-task") {
-          flushReasoningGroup();
-          if (currentTaskGroup.length === 0) {
-            taskGroupStartIndex = index;
+  const handleAssistantMessageExpandedChange = useCallback(
+    (messageId: string, isExpanded: boolean) => {
+      setExpandedAssistantMessages((current) => {
+        if (isExpanded) {
+          if (current[messageId]) {
+            return current;
           }
-          currentTaskGroup.push(part);
-          return;
+
+          return { ...current, [messageId]: true };
         }
 
-        if (isReasoningUIPart(part)) {
-          flushTaskGroup();
-          if (currentReasoningGroup.length === 0) {
-            reasoningGroupStartIndex = index;
-          }
-          currentReasoningGroup.push(part);
-          return;
+        if (!current[messageId]) {
+          return current;
         }
 
-        flushTaskGroup();
-        flushReasoningGroup();
-        groups.push({
-          type: "part",
-          part,
-          index,
-          renderKey: getStablePartRenderKey(part),
-        });
+        const next = { ...current };
+        delete next[messageId];
+        return next;
       });
+    },
+    [],
+  );
+  const groupedRenderMessages = useMemo<GroupedRenderMessage[]>(() => {
+    const lastMessageIndex = renderMessages.length - 1;
 
-      flushTaskGroup();
-      flushReasoningGroup();
+    return renderMessages.map((message, messageIndex) => {
+      const groups =
+        messageIndex === lastMessageIndex
+          ? buildMessageRenderGroups(message)
+          : (groupedMessageCacheRef.current.get(message.id) ??
+            buildMessageRenderGroups(message));
+
+      if (messageIndex !== lastMessageIndex) {
+        groupedMessageCacheRef.current.set(message.id, groups);
+      }
 
       return {
         message,
@@ -1473,6 +1508,16 @@ export function SessionChatContent({
 
   const hasMessageActionInFlight =
     deletingMessageId !== null || resendingMessageId !== null || isChatInFlight;
+  const messagesRef = useRef(messages);
+  const hasMessageActionInFlightRef = useRef(hasMessageActionInFlight);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    hasMessageActionInFlightRef.current = hasMessageActionInFlight;
+  }, [hasMessageActionInFlight]);
 
   const sendMessageWithPendingState = useCallback(
     async (message: Parameters<typeof sendMessage>[0]) => {
@@ -1495,16 +1540,17 @@ export function SessionChatContent({
 
   const handleDeleteUserMessage = useCallback(
     async (messageId: string) => {
-      if (hasMessageActionInFlight) {
+      if (hasMessageActionInFlightRef.current) {
         return;
       }
 
-      const targetMessageIndex = messages.findIndex(
+      const currentMessages = messagesRef.current;
+      const targetMessageIndex = currentMessages.findIndex(
         (message) => message.id === messageId,
       );
       if (
         targetMessageIndex < 0 ||
-        messages[targetMessageIndex]?.role !== "user"
+        currentMessages[targetMessageIndex]?.role !== "user"
       ) {
         return;
       }
@@ -1533,7 +1579,7 @@ export function SessionChatContent({
           throw new Error(payload.error ?? "Failed to delete message");
         }
 
-        setMessages(messages.slice(0, targetMessageIndex));
+        setMessages(currentMessages.slice(0, targetMessageIndex));
         await refreshChats();
       } catch (err) {
         console.error("Failed to delete message:", err);
@@ -1544,26 +1590,20 @@ export function SessionChatContent({
         setDeletingMessageId(null);
       }
     },
-    [
-      hasMessageActionInFlight,
-      messages,
-      session.id,
-      chatInfo.id,
-      setMessages,
-      refreshChats,
-    ],
+    [session.id, chatInfo.id, setMessages, refreshChats],
   );
 
   const handleResendUserMessage = useCallback(
     async (messageId: string) => {
-      if (hasMessageActionInFlight) {
+      if (hasMessageActionInFlightRef.current) {
         return;
       }
 
-      const targetMessageIndex = messages.findIndex(
+      const currentMessages = messagesRef.current;
+      const targetMessageIndex = currentMessages.findIndex(
         (message) => message.id === messageId,
       );
-      const targetMessage = messages[targetMessageIndex];
+      const targetMessage = currentMessages[targetMessageIndex];
       if (!targetMessage || targetMessage.role !== "user") {
         return;
       }
@@ -1612,7 +1652,7 @@ export function SessionChatContent({
           throw new Error(payload.error ?? "Failed to resend message");
         }
 
-        setMessages(messages.slice(0, targetMessageIndex));
+        setMessages(currentMessages.slice(0, targetMessageIndex));
         await sendMessageWithPendingState({
           text: resendText,
           files: resendFiles.length > 0 ? resendFiles : undefined,
@@ -1629,8 +1669,6 @@ export function SessionChatContent({
       }
     },
     [
-      hasMessageActionInFlight,
-      messages,
       session.id,
       chatInfo.id,
       setMessages,
@@ -1638,6 +1676,18 @@ export function SessionChatContent({
       refreshChats,
     ],
   );
+
+  const handleApproveTool = useCallback((id: string) => {
+    addToolApprovalResponseRef.current({ id, approved: true });
+  }, []);
+
+  const handleDenyTool = useCallback((id: string, reason?: string) => {
+    addToolApprovalResponseRef.current({
+      id,
+      approved: false,
+      reason,
+    });
+  }, []);
 
   const waitForSandboxReady = useCallback(
     async (maxAttempts = 8): Promise<boolean> => {
@@ -2756,322 +2806,53 @@ export function SessionChatContent({
 
       {/* Messages */}
       <div className="relative flex-1 overflow-hidden">
-        <div ref={containerRef} className="h-full overflow-y-auto">
-          <div className="mx-auto max-w-4xl overflow-hidden px-4 py-8">
-            <div className="space-y-6">
-              {groupedRenderMessages.map(
-                ({ message: m, groups, isStreaming: isMessageStreaming }) => {
-                  const renderGroups = (isToolCallsExpanded: boolean) =>
-                    groups.map((group) => {
-                      if (group.type === "task-group") {
-                        if (!isToolCallsExpanded) return null;
-                        return (
-                          <div
-                            key={`${m.id}-${group.renderKey}`}
-                            className="max-w-full"
-                          >
-                            <TaskGroupView
-                              taskParts={group.tasks}
-                              activeApprovalId={
-                                group.tasks.find(
-                                  (t) => t.state === "approval-requested",
-                                )?.approval?.id ?? null
-                              }
-                              isStreaming={isMessageStreaming}
-                              onApprove={(id) =>
-                                addToolApprovalResponse({ id, approved: true })
-                              }
-                              onDeny={(id, reason) =>
-                                addToolApprovalResponse({
-                                  id,
-                                  approved: false,
-                                  reason,
-                                })
-                              }
-                            />
-                          </div>
-                        );
-                      }
+        <VirtualizedMessageList
+          scrollContainerRef={messageListContainerRef}
+          contentRef={messageListContentRef}
+          itemCount={groupedRenderMessages.length}
+          getItemKey={(index) => groupedRenderMessages[index].message.id}
+          renderItem={(index) => {
+            const {
+              message: renderMessage,
+              groups,
+              isStreaming: isMessageStreaming,
+            } = groupedRenderMessages[index];
 
-                      if (group.type === "reasoning-group") {
-                        if (!isToolCallsExpanded) return null;
-                        const hasRenderableContentAfterGroup = m.parts
-                          .slice(group.startIndex + group.parts.length)
-                          .some(hasRenderableAssistantPart);
-
-                        return (
-                          <div
-                            key={`${m.id}-${group.renderKey}`}
-                            className="flex justify-start"
-                          >
-                            <ThinkingBlock
-                              text={getReasoningGroupText(group.parts)}
-                              isStreaming={shouldKeepCollapsedReasoningStreaming(
-                                {
-                                  isMessageStreaming,
-                                  hasStreamingReasoningPart: group.parts.some(
-                                    (part) => part.state === "streaming",
-                                  ),
-                                  hasRenderableContentAfterGroup,
-                                },
-                              )}
-                              partCount={group.parts.length}
-                            />
-                          </div>
-                        );
-                      }
-
-                      const p = group.part;
-
-                      if (isReasoningUIPart(p)) {
-                        if (!isToolCallsExpanded) return null;
-                        const hasRenderableContentAfterGroup = m.parts
-                          .slice(group.index + 1)
-                          .some(hasRenderableAssistantPart);
-
-                        return (
-                          <div
-                            key={`${m.id}-${group.renderKey}`}
-                            className="flex justify-start"
-                          >
-                            <ThinkingBlock
-                              text={p.text}
-                              isStreaming={shouldKeepCollapsedReasoningStreaming(
-                                {
-                                  isMessageStreaming,
-                                  hasStreamingReasoningPart:
-                                    p.state === "streaming",
-                                  hasRenderableContentAfterGroup,
-                                },
-                              )}
-                            />
-                          </div>
-                        );
-                      }
-
-                      if (p.type === "text") {
-                        if (p.text.length === 0) {
-                          return null;
-                        }
-
-                        const isFinalAssistantTextPart =
-                          m.role === "assistant" &&
-                          !m.parts
-                            .slice(group.index + 1)
-                            .some((messagePart) => messagePart.type === "text");
-
-                        // When collapsed, hide every text part except the
-                        // final one.  The final text part streams in live so
-                        // the user always sees the latest assistant prose.
-                        if (
-                          !isToolCallsExpanded &&
-                          m.role === "assistant" &&
-                          !isFinalAssistantTextPart
-                        ) {
-                          return null;
-                        }
-
-                        const canCopyAssistantMessage =
-                          isFinalAssistantTextPart &&
-                          !isMessageStreaming &&
-                          p.text.trim().length > 0;
-
-                        return (
-                          <div
-                            key={`${m.id}-${group.renderKey}`}
-                            className={cn(
-                              "flex min-w-0",
-                              m.role === "user"
-                                ? "justify-end"
-                                : "justify-start",
-                            )}
-                          >
-                            {m.role === "user" ? (
-                              <div className="group relative w-fit min-w-0 max-w-[80%]">
-                                <div className="rounded-3xl bg-secondary px-4 py-2">
-                                  <p className="whitespace-pre-wrap break-words">
-                                    {p.text}
-                                  </p>
-                                </div>
-                                {group.index === 0 && (
-                                  <div className="absolute -left-20 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded-md bg-background/80 p-1 text-muted-foreground opacity-0 transition group-hover:opacity-100">
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        void handleResendUserMessage(m.id)
-                                      }
-                                      disabled={hasMessageActionInFlight}
-                                      aria-label="Resend this message and delete everything after it"
-                                      className="rounded p-1 transition hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-                                    >
-                                      {resendingMessageId === m.id ? (
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                      ) : (
-                                        <RotateCcw className="h-4 w-4" />
-                                      )}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        void handleDeleteUserMessage(m.id)
-                                      }
-                                      disabled={hasMessageActionInFlight}
-                                      aria-label="Delete this message and everything after it"
-                                      className="rounded p-1 transition hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40"
-                                    >
-                                      {deletingMessageId === m.id ? (
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                      ) : (
-                                        <Trash2 className="h-4 w-4" />
-                                      )}
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <div className="group min-w-0 w-full overflow-hidden">
-                                <Streamdown
-                                  animated={
-                                    isMessageStreaming
-                                      ? {
-                                          animation: "fadeIn",
-                                          duration: 250,
-                                          easing: "ease-out",
-                                        }
-                                      : undefined
-                                  }
-                                  mode={
-                                    isMessageStreaming ? "streaming" : "static"
-                                  }
-                                  isAnimating={isMessageStreaming}
-                                  plugins={streamdownPlugins}
-                                >
-                                  {p.text}
-                                </Streamdown>
-                                {canCopyAssistantMessage && (
-                                  <div className="mt-1 flex justify-start">
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        void handleCopyAssistantMessage(
-                                          m.id,
-                                          p.text,
-                                        )
-                                      }
-                                      aria-label="Copy assistant response"
-                                      className="rounded p-1 text-muted-foreground opacity-0 transition hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
-                                    >
-                                      {copiedAssistantMessageId === m.id ? (
-                                        <Check className="h-4 w-4" />
-                                      ) : (
-                                        <Copy className="h-4 w-4" />
-                                      )}
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      }
-
-                      if (isToolUIPart(p)) {
-                        if (!isToolCallsExpanded) return null;
-                        return (
-                          <div
-                            key={`${m.id}-${group.renderKey}`}
-                            className="max-w-full"
-                          >
-                            <ToolCall
-                              part={p as WebAgentUIToolPart}
-                              isStreaming={isMessageStreaming}
-                              onApprove={(id) =>
-                                addToolApprovalResponse({ id, approved: true })
-                              }
-                              onDeny={(id, reason) =>
-                                addToolApprovalResponse({
-                                  id,
-                                  approved: false,
-                                  reason,
-                                })
-                              }
-                            />
-                          </div>
-                        );
-                      }
-
-                      // Render image attachments
-                      if (
-                        p.type === "file" &&
-                        p.mediaType?.startsWith("image/")
-                      ) {
-                        if (!isToolCallsExpanded && m.role === "assistant") {
-                          return null;
-                        }
-                        return (
-                          <div
-                            key={`${m.id}-${group.renderKey}`}
-                            className="flex justify-end"
-                          >
-                            <div className="group relative w-fit max-w-[80%]">
-                              {/* eslint-disable-next-line @next/next/no-img-element -- Data URLs not supported by next/image */}
-                              <img
-                                src={p.url}
-                                alt={p.filename ?? "Attached image"}
-                                className="max-h-64 rounded-lg"
-                              />
-                              {m.role === "user" && group.index === 0 && (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    void handleDeleteUserMessage(m.id)
-                                  }
-                                  disabled={hasMessageActionInFlight}
-                                  aria-label="Delete this message and everything after it"
-                                  className="absolute -left-10 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground opacity-0 transition hover:text-destructive group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
-                                >
-                                  {deletingMessageId === m.id ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <Trash2 className="h-4 w-4" />
-                                  )}
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      }
-
-                      return null;
-                    });
-
-                  if (m.role === "assistant") {
-                    return (
-                      <AssistantMessageGroups
-                        key={m.id}
-                        message={m}
-                        isStreaming={isMessageStreaming}
-                        durationMs={messageDurationMap[m.id] ?? null}
-                        startedAt={
-                          messageStartedAtMap[m.id] ??
-                          (isMessageStreaming
-                            ? lastSendTimestampRef.current
-                              ? new Date(
-                                  lastSendTimestampRef.current,
-                                ).toISOString()
-                              : lastUserMessageSentAt
-                            : null)
-                        }
-                      >
-                        {renderGroups}
-                      </AssistantMessageGroups>
-                    );
+            return (
+              <div className="mx-auto max-w-4xl px-4 pb-6">
+                <ChatMessageRow
+                  message={renderMessage}
+                  groups={groups}
+                  isExpanded={
+                    expandedAssistantMessages[renderMessage.id] ?? false
                   }
-
-                  return renderGroups(true);
-                },
-              )}
-              {showThinkingIndicator && (
+                  isStreaming={isMessageStreaming}
+                  durationMs={messageDurationMap[renderMessage.id] ?? null}
+                  startedAt={
+                    messageStartedAtMap[renderMessage.id] ??
+                    (isMessageStreaming
+                      ? lastSendTimestampRef.current
+                        ? new Date(lastSendTimestampRef.current).toISOString()
+                        : lastUserMessageSentAt
+                      : null)
+                  }
+                  copiedAssistantMessageId={copiedAssistantMessageId}
+                  deletingMessageId={deletingMessageId}
+                  resendingMessageId={resendingMessageId}
+                  hasMessageActionInFlight={hasMessageActionInFlight}
+                  onExpandedChange={handleAssistantMessageExpandedChange}
+                  onCopyAssistantMessage={handleCopyAssistantMessage}
+                  onDeleteUserMessage={handleDeleteUserMessage}
+                  onResendUserMessage={handleResendUserMessage}
+                  onApproveTool={handleApproveTool}
+                  onDenyTool={handleDenyTool}
+                />
+              </div>
+            );
+          }}
+          footer={
+            showThinkingIndicator ? (
+              <div className="mx-auto max-w-4xl overflow-hidden px-4">
                 <div className="my-1.5 border border-transparent py-0.5">
                   <div className="inline-flex items-center gap-2 rounded-md py-px text-sm text-muted-foreground">
                     <span className="flex size-3.5 shrink-0 items-center justify-center">
@@ -3080,16 +2861,16 @@ export function SessionChatContent({
                     <span className="leading-none">Thinking…</span>
                   </div>
                 </div>
-              )}
-            </div>
-          </div>
-        </div>
+              </div>
+            ) : null
+          }
+        />
         {!isAtBottom && (
           <Button
             variant="ghost"
             size="icon"
             className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-secondary text-secondary-foreground hover:bg-accent"
-            onClick={scrollToBottom}
+            onClick={() => scrollToBottom()}
           >
             <ArrowDown className="h-4 w-4" />
           </Button>
