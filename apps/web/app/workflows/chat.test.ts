@@ -13,6 +13,8 @@ const spies = {
   recordWorkflowUsage: mock(() => Promise.resolve()),
   refreshDiffCache: mock(() => Promise.resolve()),
   runAutoCommitStep: mock(() => Promise.resolve()),
+  postSlackReplyIfPending: mock(() => Promise.resolve()),
+  skipSlackReplyIfPending: mock(() => Promise.resolve()),
 };
 
 // Track what the agent stream yields
@@ -50,7 +52,19 @@ mock.module("workflow/api", () => ({
   }),
 }));
 
-mock.module("./chat-post-finish", () => spies);
+mock.module("./chat-post-finish", () => ({
+  clearActiveStream: spies.clearActiveStream,
+  persistAssistantMessage: spies.persistAssistantMessage,
+  persistSandboxState: spies.persistSandboxState,
+  recordWorkflowUsage: spies.recordWorkflowUsage,
+  refreshDiffCache: spies.refreshDiffCache,
+  runAutoCommitStep: spies.runAutoCommitStep,
+}));
+
+mock.module("./chat-external-reply", () => ({
+  postSlackReplyIfPending: spies.postSlackReplyIfPending,
+  skipSlackReplyIfPending: spies.skipSlackReplyIfPending,
+}));
 
 mock.module("@/app/config", () => ({
   webAgent: {
@@ -203,6 +217,129 @@ describe("runAgentWorkflow", () => {
     const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
     expect(rwCalls[0][0]).toBe("user-1");
     expect(rwCalls[0][1]).toBe("gpt-4");
+  });
+
+  test("posts the Slack reply for a natural finish", async () => {
+    await runAgentWorkflow(makeOptions());
+
+    expect(spies.postSlackReplyIfPending).toHaveBeenCalledTimes(1);
+    expect(spies.postSlackReplyIfPending).toHaveBeenCalledWith(
+      "chat-1",
+      expect.objectContaining({ role: "assistant" }),
+    );
+    expect(spies.skipSlackReplyIfPending).not.toHaveBeenCalled();
+  });
+
+  test("skips the Slack reply when the run pauses on tool calls", async () => {
+    agentFinishReason = "tool-calls";
+    agentStreamParts = [
+      { type: "text-delta", textDelta: "Hi" },
+      {
+        type: "finish-step",
+        finishReason: "tool-calls",
+        rawFinishReason: "provider_tool_use",
+        usage: agentTotalUsage,
+      },
+    ];
+
+    await runAgentWorkflow(
+      makeOptions({
+        maxSteps: 1,
+      }),
+    );
+
+    expect(spies.postSlackReplyIfPending).not.toHaveBeenCalled();
+    expect(spies.skipSlackReplyIfPending).toHaveBeenCalledWith("chat-1");
+  });
+
+  test("skips the Slack reply when the run aborts", async () => {
+    mock.module("@/app/config", () => ({
+      webAgent: {
+        tools: {},
+        stream: async () => {
+          const error = new Error("Aborted");
+          error.name = "AbortError";
+          throw error;
+        },
+      },
+    }));
+
+    try {
+      const { runAgentWorkflow: reloadedRun } = await import("./chat");
+      await reloadedRun(makeOptions());
+
+      expect(spies.postSlackReplyIfPending).not.toHaveBeenCalled();
+      expect(spies.skipSlackReplyIfPending).toHaveBeenCalledWith("chat-1");
+    } finally {
+      mock.module("@/app/config", () => ({
+        webAgent: {
+          tools: {},
+          stream: async () => {
+            return {
+              toUIMessageStream: (opts: {
+                sendStart?: boolean;
+                sendFinish?: boolean;
+                originalMessages?: Array<Record<string, unknown>>;
+                messageMetadata?: (args: {
+                  part: Record<string, unknown>;
+                }) => unknown;
+                onFinish?: (args: { responseMessage: unknown }) => void;
+              }) => {
+                const priorAssistantMessage = opts.originalMessages?.at(-1);
+                const assistantMessage = (
+                  priorAssistantMessage?.role === "assistant"
+                    ? structuredClone(priorAssistantMessage)
+                    : {
+                        id: "assistant-1",
+                        role: "assistant",
+                        parts: [{ type: "text", text: "Hello!" }],
+                        metadata: {},
+                      }
+                ) as {
+                  id: string;
+                  role: "assistant";
+                  parts: Array<Record<string, unknown>>;
+                  metadata?: unknown;
+                };
+
+                streamOnFinishCallback = opts.onFinish;
+                return {
+                  async *[Symbol.asyncIterator]() {
+                    for (const part of agentStreamParts) {
+                      yield part;
+
+                      const metadata = opts.messageMetadata?.({ part });
+                      if (metadata) {
+                        assistantMessage.metadata = Object.assign(
+                          {},
+                          assistantMessage.metadata as
+                            | Record<string, unknown>
+                            | undefined,
+                          metadata as Record<string, unknown>,
+                        );
+                        yield {
+                          type: "message-metadata",
+                          messageMetadata: metadata,
+                        };
+                      }
+                    }
+                    if (streamOnFinishCallback) {
+                      streamOnFinishCallback({
+                        responseMessage: assistantMessage,
+                      });
+                    }
+                  },
+                };
+              },
+              totalUsage: Promise.resolve(agentTotalUsage),
+              finishReason: Promise.resolve(agentFinishReason),
+              rawFinishReason: Promise.resolve(agentRawFinishReason),
+              response: Promise.resolve(agentResponse),
+            };
+          },
+        },
+      }));
+    }
   });
 
   test("logs full step details when the agent finishes with reason other", async () => {

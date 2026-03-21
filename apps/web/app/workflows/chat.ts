@@ -24,6 +24,10 @@ import {
   refreshDiffCache,
   runAutoCommitStep,
 } from "./chat-post-finish";
+import {
+  postSlackReplyIfPending,
+  skipSlackReplyIfPending,
+} from "./chat-external-reply";
 
 type Options = {
   messages: WebAgentUIMessage[];
@@ -107,6 +111,7 @@ export async function runAgentWorkflow(options: Options) {
 
   let wasAborted = false;
   let totalUsage: LanguageModelUsage | undefined;
+  let lastFinishReason: FinishReason | undefined;
   let streamClosed = false;
 
   try {
@@ -129,6 +134,7 @@ export async function runAgentWorkflow(options: Options) {
       originalMessagesForStep = [pendingAssistantResponse];
       modelMessages.push(...result.responseMessages);
       wasAborted = wasAborted || result.stepWasAborted;
+      lastFinishReason = result.finishReason;
 
       if (result.stepUsage) {
         totalUsage = totalUsage
@@ -158,6 +164,12 @@ export async function runAgentWorkflow(options: Options) {
     // Always persist the assistant message — even on abort, save content
     // from completed steps so mid-stream output is not lost.
     await persistAssistantMessage(options.chatId, pendingAssistantResponse);
+
+    if (!wasAborted && lastFinishReason !== "tool-calls") {
+      await postSlackReplyIfPending(options.chatId, pendingAssistantResponse);
+    } else {
+      await skipSlackReplyIfPending(options.chatId);
+    }
 
     await recordWorkflowUsage(
       options.userId,

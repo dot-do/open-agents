@@ -253,6 +253,25 @@ export const chatReads = pgTable(
   ],
 );
 
+export const chatExternalReplies = pgTable("chat_external_replies", {
+  chatId: text("chat_id")
+    .primaryKey()
+    .references(() => chats.id, { onDelete: "cascade" }),
+  provider: text("provider", { enum: ["slack"] }).notNull(),
+  workspaceId: text("workspace_id").notNull(),
+  channelId: text("channel_id").notNull(),
+  threadTs: text("thread_ts").notNull(),
+  chatUrl: text("chat_url").notNull(),
+  status: text("status", {
+    enum: ["pending", "sending", "completed", "skipped", "failed"],
+  })
+    .notNull()
+    .default("pending"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+});
+
 export type Session = typeof sessions.$inferSelect;
 export type NewSession = typeof sessions.$inferInsert;
 export type VercelProjectLink = typeof vercelProjectLinks.$inferSelect;
@@ -265,6 +284,8 @@ export type ChatMessage = typeof chatMessages.$inferSelect;
 export type NewChatMessage = typeof chatMessages.$inferInsert;
 export type ChatRead = typeof chatReads.$inferSelect;
 export type NewChatRead = typeof chatReads.$inferInsert;
+export type ChatExternalReply = typeof chatExternalReplies.$inferSelect;
+export type NewChatExternalReply = typeof chatExternalReplies.$inferInsert;
 export type GitHubInstallation = typeof githubInstallations.$inferSelect;
 export type NewGitHubInstallation = typeof githubInstallations.$inferInsert;
 

@@ -1,19 +1,12 @@
-import { nanoid } from "nanoid";
 import {
-  createSessionWithInitialChat,
   getArchivedSessionCountByUserId,
   getSessionsWithUnreadByUserId,
-  getUsedSessionTitles,
 } from "@/lib/db/sessions";
 import {
-  getVercelProjectLinkByRepo,
-  upsertVercelProjectLink,
-} from "@/lib/db/vercel-project-links";
-import { getUserPreferences } from "@/lib/db/user-preferences";
-import { getRandomCityName } from "@/lib/random-city";
+  CreateSessionForUserError,
+  createSessionForUser,
+} from "@/lib/sessions/create-session-for-user";
 import { getServerSession } from "@/lib/session/get-server-session";
-import { listMatchingVercelProjects } from "@/lib/vercel/projects";
-import { getUserVercelToken } from "@/lib/vercel/token";
 import {
   vercelProjectSelectionSchema,
   type VercelProjectSelection,
@@ -29,33 +22,6 @@ interface CreateSessionRequest {
   sandboxType?: "vercel";
   autoCommitPush?: boolean;
   vercelProject?: VercelProjectSelection | null;
-}
-
-function generateBranchName(username: string, name?: string | null): string {
-  let initials = "nb";
-  if (name) {
-    initials =
-      name
-        .split(" ")
-        .map((n) => n[0]?.toLowerCase() ?? "")
-        .join("")
-        .slice(0, 2) || "nb";
-  } else if (username) {
-    initials = username.slice(0, 2).toLowerCase();
-  }
-  const randomSuffix = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
-  return `${initials}/${randomSuffix}`;
-}
-
-async function resolveSessionTitle(
-  input: CreateSessionRequest,
-  userId: string,
-): Promise<string> {
-  if (input.title && input.title.trim()) {
-    return input.title.trim();
-  }
-  const usedNames = await getUsedSessionTitles(userId);
-  return getRandomCityName(usedNames);
 }
 
 const DEFAULT_ARCHIVED_SESSIONS_LIMIT = 50;
@@ -197,105 +163,28 @@ export async function POST(req: Request) {
     explicitVercelProject = parsedProject.data;
   }
 
-  const {
-    repoOwner,
-    repoName,
-    branch,
-    cloneUrl,
-    isNewBranch,
-    sandboxType = "vercel",
-    autoCommitPush,
-  } = body;
-
-  let finalBranch = branch;
-  if (isNewBranch) {
-    finalBranch = generateBranchName(session.user.username, session.user.name);
-  }
-
   try {
-    const titlePromise = resolveSessionTitle(body, session.user.id);
-    const preferencesPromise = getUserPreferences(session.user.id);
-
-    let resolvedVercelProject: VercelProjectSelection | null = null;
-    const hasRepo = Boolean(repoOwner && repoName);
-    if (hasRepo && repoOwner && repoName) {
-      if (explicitVercelProject) {
-        const vercelToken = await getUserVercelToken(session.user.id);
-        if (!vercelToken) {
-          return Response.json(
-            { error: "Connect Vercel to select a Vercel project" },
-            { status: 403 },
-          );
-        }
-
-        const matchingProjects = await listMatchingVercelProjects({
-          token: vercelToken,
-          repoOwner,
-          repoName,
-        });
-        const matchedProject =
-          matchingProjects.find(
-            (project) => project.projectId === explicitVercelProject.projectId,
-          ) ?? null;
-        if (!matchedProject) {
-          return Response.json(
-            {
-              error:
-                "Selected Vercel project no longer matches this repository",
-            },
-            { status: 400 },
-          );
-        }
-
-        await upsertVercelProjectLink({
-          userId: session.user.id,
-          repoOwner,
-          repoName,
-          project: matchedProject,
-        });
-        resolvedVercelProject = matchedProject;
-      } else if (explicitVercelProject === undefined) {
-        resolvedVercelProject = await getVercelProjectLinkByRepo(
-          session.user.id,
-          repoOwner,
-          repoName,
-        );
-      }
-    }
-
-    const [title, preferences] = await Promise.all([
-      titlePromise,
-      preferencesPromise,
-    ]);
-    const result = await createSessionWithInitialChat({
-      session: {
-        id: nanoid(),
-        userId: session.user.id,
-        title,
-        status: "running",
-        repoOwner,
-        repoName,
-        branch: finalBranch,
-        cloneUrl,
-        vercelProjectId: resolvedVercelProject?.projectId ?? null,
-        vercelProjectName: resolvedVercelProject?.projectName ?? null,
-        vercelTeamId: resolvedVercelProject?.teamId ?? null,
-        vercelTeamSlug: resolvedVercelProject?.teamSlug ?? null,
-        isNewBranch: isNewBranch ?? false,
-        autoCommitPushOverride: autoCommitPush ?? preferences.autoCommitPush,
-        sandboxState: { type: sandboxType },
-        lifecycleState: "provisioning",
-        lifecycleVersion: 0,
-      },
-      initialChat: {
-        id: nanoid(),
-        title: "New chat",
-        modelId: preferences.defaultModelId,
-      },
+    const result = await createSessionForUser({
+      userId: session.user.id,
+      username: session.user.username,
+      name: session.user.name,
+      title: body.title,
+      repoOwner: body.repoOwner,
+      repoName: body.repoName,
+      branch: body.branch,
+      cloneUrl: body.cloneUrl,
+      isNewBranch: body.isNewBranch,
+      sandboxType: body.sandboxType ?? "vercel",
+      autoCommitPush: body.autoCommitPush,
+      vercelProject: explicitVercelProject,
     });
 
     return Response.json(result);
   } catch (error) {
+    if (error instanceof CreateSessionForUserError) {
+      return Response.json({ error: error.message }, { status: error.status });
+    }
+
     console.error("Failed to create session:", error);
     return Response.json(
       { error: "Failed to create session" },

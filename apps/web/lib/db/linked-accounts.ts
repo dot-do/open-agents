@@ -1,11 +1,11 @@
+import { and, eq } from "drizzle-orm";
+import { nanoid } from "nanoid";
 import { db } from "./client";
 import {
   linkedAccounts,
   type LinkedAccount,
   type NewLinkedAccount,
 } from "./schema";
-import { eq, and } from "drizzle-orm";
-import { nanoid } from "nanoid";
 
 export async function createLinkedAccount(
   data: Omit<NewLinkedAccount, "id" | "createdAt" | "updatedAt">,
@@ -72,6 +72,64 @@ export async function getLinkedAccountByProviderAndExternalId(
     .limit(1);
 
   return account;
+}
+
+export type EnsureLinkedAccountResult =
+  | { status: "created"; account: LinkedAccount }
+  | { status: "existing"; account: LinkedAccount }
+  | { status: "conflict"; account: LinkedAccount };
+
+export async function ensureLinkedAccountForUser(
+  data: Omit<NewLinkedAccount, "id" | "createdAt" | "updatedAt">,
+): Promise<EnsureLinkedAccountResult> {
+  const now = new Date();
+  const id = nanoid();
+
+  const [inserted] = await db
+    .insert(linkedAccounts)
+    .values({
+      ...data,
+      id,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoNothing({
+      target: [
+        linkedAccounts.provider,
+        linkedAccounts.externalId,
+        linkedAccounts.workspaceId,
+      ],
+    })
+    .returning();
+
+  if (inserted) {
+    return { status: "created", account: inserted };
+  }
+
+  const existing = await getLinkedAccountByProviderAndExternalId(
+    data.provider,
+    data.externalId,
+    data.workspaceId ?? undefined,
+  );
+
+  if (!existing) {
+    throw new Error("Failed to read linked account after conflict");
+  }
+
+  if (existing.userId !== data.userId) {
+    return { status: "conflict", account: existing };
+  }
+
+  const [updated] = await db
+    .update(linkedAccounts)
+    .set({
+      metadata: data.metadata,
+      updatedAt: now,
+    })
+    .where(eq(linkedAccounts.id, existing.id))
+    .returning();
+
+  return { status: "existing", account: updated ?? existing };
 }
 
 export async function updateLinkedAccount(

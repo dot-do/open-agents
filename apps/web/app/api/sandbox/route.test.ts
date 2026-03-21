@@ -63,6 +63,15 @@ mock.module("@/lib/session/get-server-session", () => ({
   }),
 }));
 
+mock.module("@/lib/db/users", () => ({
+  getUserById: async () => ({
+    id: "user-1",
+    username: "nico",
+    name: "Nico",
+    email: "nico@example.com",
+  }),
+}));
+
 mock.module("@/lib/db/accounts", () => ({
   getGitHubAccount: async () => ({
     externalUserId: "12345",
