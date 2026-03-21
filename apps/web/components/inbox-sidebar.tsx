@@ -124,66 +124,21 @@ function sortSessionsForInbox(
   });
 }
 
-/** Repo label shown before the title — the "sender" line in email terms. */
-function getRepoLabel(session: SessionWithUnread): string | null {
-  if (!session.repoName) return null;
-  return session.repoOwner
-    ? `${session.repoOwner}/${session.repoName}`
-    : session.repoName;
-}
-
-/** One-line derived snippet that describes the current state of the session. */
-function getSnippet(session: SessionWithUnread): string {
-  if (isWaitingOnAgent(session)) {
-    return "Agent is working…";
+/**
+ * Compressed context for the right side of the row.
+ * Shows the single most useful piece of context — no redundancy.
+ */
+function getContextLabel(session: SessionWithUnread): string | null {
+  if (session.prNumber) {
+    const prefix = session.prStatus === "merged" ? "merged" : "PR";
+    return `${prefix} #${session.prNumber}`;
   }
 
-  if (
-    session.needsResponse &&
-    session.prStatus === "open" &&
-    session.prNumber
-  ) {
-    return `PR #${session.prNumber} open — awaiting your review`;
+  if (session.repoName) {
+    return session.repoName;
   }
 
-  if (session.needsResponse) {
-    return "Agent replied — awaiting your response";
-  }
-
-  if (session.prStatus === "open" && session.prNumber) {
-    return `PR #${session.prNumber} is open`;
-  }
-
-  if (session.prStatus === "merged" && session.prNumber) {
-    return `PR #${session.prNumber} merged`;
-  }
-
-  if (session.branch) {
-    return session.branch;
-  }
-
-  return "";
-}
-
-function DiffStats({
-  added,
-  removed,
-}: {
-  added: number | null;
-  removed: number | null;
-}) {
-  if (added === null && removed === null) return null;
-
-  return (
-    <span className="flex items-center gap-0.5 font-mono text-[10px]">
-      {added !== null ? (
-        <span className="text-green-600 dark:text-green-500">+{added}</span>
-      ) : null}
-      {removed !== null ? (
-        <span className="text-red-600 dark:text-red-400">-{removed}</span>
-      ) : null}
-    </span>
-  );
+  return null;
 }
 
 type SessionRowProps = {
@@ -215,13 +170,12 @@ const SessionRow = memo(function SessionRow({
       formatRelativeTime(new Date(session.lastActivityAt ?? session.createdAt)),
     [session.createdAt, session.lastActivityAt],
   );
-  const repoLabel = getRepoLabel(session);
-  const snippet = getSnippet(session);
+  const contextLabel = getContextLabel(session);
 
   return (
     <div
       className={cn(
-        "group relative flex w-full items-start gap-2.5 border-b border-border/50 px-4 py-2 text-left transition-colors",
+        "group relative flex w-full items-center gap-2.5 border-b border-border/50 px-4 py-2 text-left transition-colors",
         isActive
           ? "bg-accent/50"
           : isFocused
@@ -233,68 +187,52 @@ const SessionRow = memo(function SessionRow({
       data-session-id={session.id}
     >
       {/* Status dot */}
-      <div className="flex h-5 w-3 shrink-0 items-center justify-center pt-px">
+      <div className="flex w-2 shrink-0 items-center justify-center">
         {isWorking ? (
-          <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+          <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
         ) : hasAction ? (
-          <span className="h-2 w-2 rounded-full bg-foreground" />
+          <span className="h-1.5 w-1.5 rounded-full bg-foreground" />
         ) : null}
       </div>
 
-      <div className="min-w-0 flex-1">
-        <button
-          type="button"
-          onClick={() => onSessionClick(session)}
-          onMouseEnter={() => onSessionPrefetch(session)}
-          onFocus={() => onSessionPrefetch(session)}
-          className="block w-full text-left"
-          tabIndex={-1}
-          aria-busy={isPending}
+      <button
+        type="button"
+        onClick={() => onSessionClick(session)}
+        onMouseEnter={() => onSessionPrefetch(session)}
+        onFocus={() => onSessionPrefetch(session)}
+        className="flex min-w-0 flex-1 items-baseline gap-3 pr-5"
+        tabIndex={-1}
+        aria-busy={isPending}
+      >
+        <p
+          className={cn(
+            "min-w-0 flex-1 truncate text-[13px] leading-5",
+            isHighlighted
+              ? "font-semibold text-foreground"
+              : "font-normal text-foreground",
+          )}
         >
-          {/* Line 1: repo (sender) + timestamp */}
-          <div className="flex min-w-0 items-baseline gap-2 pr-6">
-            {repoLabel ? (
-              <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">
-                {repoLabel}
-              </span>
-            ) : null}
-            <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
-              <DiffStats
-                added={session.linesAdded}
-                removed={session.linesRemoved}
-              />
-              {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-              <span className="tabular-nums">{lastActivityLabel}</span>
+          {session.title}
+        </p>
+        <span className="flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
+          {contextLabel ? (
+            <span className="max-w-[12rem] truncate font-mono">
+              {contextLabel}
             </span>
-          </div>
-
-          {/* Line 2: title (subject) */}
-          <p
-            className={cn(
-              "truncate text-[13px] leading-5",
-              isHighlighted
-                ? "font-semibold text-foreground"
-                : "font-normal text-foreground",
-            )}
-          >
-            {session.title}
-          </p>
-
-          {/* Line 3: snippet (preview) */}
-          {snippet ? (
-            <p className="mt-px truncate text-[11px] leading-4 text-muted-foreground">
-              {snippet}
-            </p>
           ) : null}
-        </button>
-      </div>
+          {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+          <span className="w-8 text-right tabular-nums">
+            {lastActivityLabel}
+          </span>
+        </span>
+      </button>
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
             onClick={(e) => e.stopPropagation()}
-            className="absolute right-2 top-2 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100 data-[state=open]:opacity-100"
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100 data-[state=open]:opacity-100"
             tabIndex={-1}
             aria-label={`Open menu for ${session.title}`}
           >
@@ -766,11 +704,11 @@ export function InboxSidebar({
       >
         {showLoadingSkeleton ? (
           <div className="space-y-px">
-            {Array.from({ length: 8 }).map((_, index) => (
-              <div key={index} className="space-y-1.5 px-4 py-2.5">
-                <div className="h-3 w-24 animate-pulse rounded bg-muted" />
-                <div className="h-3.5 w-3/4 animate-pulse rounded bg-muted" />
-                <div className="h-3 w-1/3 animate-pulse rounded bg-muted" />
+            {Array.from({ length: 10 }).map((_, index) => (
+              <div key={index} className="flex items-center gap-3 px-4 py-2">
+                <div className="h-1.5 w-1.5 rounded-full bg-muted" />
+                <div className="h-3.5 flex-1 animate-pulse rounded bg-muted" />
+                <div className="h-3 w-16 animate-pulse rounded bg-muted" />
               </div>
             ))}
           </div>
