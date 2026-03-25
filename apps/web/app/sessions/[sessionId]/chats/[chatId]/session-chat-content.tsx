@@ -48,6 +48,10 @@ import type {
   WebAgentUIMessagePart,
   WebAgentUIToolPart,
 } from "@/app/types";
+import {
+  AssistantFileLink,
+  type AssistantFileLinkProps,
+} from "@/components/assistant-file-link";
 import { FileSuggestionsDropdown } from "@/components/file-suggestions-dropdown";
 import { ImageAttachmentsPreview } from "@/components/image-attachments-preview";
 import { ModelSelectorCompact } from "@/components/model-selector-compact";
@@ -122,16 +126,19 @@ import {
 } from "./session-chat-context";
 import { useStreamRecovery } from "./hooks/use-stream-recovery";
 import { useAutoCommitStatus } from "./hooks/use-auto-commit-status";
+import { useDevServer } from "./hooks/use-dev-server";
 import {
   CommitActionHeaderButton,
   CommitActionMenuItem,
 } from "./commit-action-button";
+import { DevServerMenuItems } from "./dev-server-menu-items";
 import {
   createSandbox,
   getSandboxCreateErrorDetails,
   type SandboxCreateErrorDetails,
 } from "./sandbox-create";
 import { SandboxCreateErrorBanner } from "./sandbox-create-error-banner";
+import { WorkspaceFileViewer } from "./workspace-file-viewer";
 import "streamdown/styles.css";
 
 const DiffViewer = dynamic(
@@ -860,6 +867,9 @@ export function SessionChatContent({
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [repoDialogOpen, setRepoDialogOpen] = useState(false);
   const [showDiffPanel, setShowDiffPanel] = useState(false);
+  const [selectedWorkspaceFile, setSelectedWorkspaceFile] = useState<
+    string | null
+  >(null);
   const [mobileArchiveDialogOpen, setMobileArchiveDialogOpen] = useState(false);
   const [mobileShareOpen, setMobileShareOpen] = useState(false);
   const [chatSwitcherOpen, setChatSwitcherOpen] = useState(false);
@@ -1250,6 +1260,19 @@ export function SessionChatContent({
       };
     });
   }, [renderMessages, isChatInFlight]);
+  const streamdownComponents = useMemo(
+    () => ({
+      a: (props: AssistantFileLinkProps) => (
+        <AssistantFileLink
+          {...props}
+          onOpenFile={(filePath) => {
+            setSelectedWorkspaceFile(filePath);
+          }}
+        />
+      ),
+    }),
+    [],
+  );
   const [isUpdatingModel, setIsUpdatingModel] = useState(false);
   const lastStatusSyncAtRef = useRef(0);
   const statusSyncInFlightRef = useRef(false);
@@ -2306,6 +2329,17 @@ export function SessionChatContent({
     isSandboxActive,
     reconnectionStatus,
   ]);
+  const canRunDevServer =
+    !isArchived &&
+    isSandboxActive &&
+    !isCreatingSandbox &&
+    !isRestoringSnapshot &&
+    !isReconnectingSandbox &&
+    !isHibernatingUi;
+  const devServer = useDevServer({
+    sessionId: session.id,
+    canRun: canRunDevServer,
+  });
 
   const hasRepo = Boolean(session.cloneUrl);
   const hasExistingPr = session.prNumber != null;
@@ -2655,7 +2689,7 @@ export function SessionChatContent({
                     <EllipsisVertical className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuContent align="end" className="w-72">
                   <NewChatMenuItem />
                   <DropdownMenuItem onClick={() => setChatSwitcherOpen(true)}>
                     <MessageSquareMore className="mr-2 h-4 w-4" />
@@ -2706,7 +2740,10 @@ export function SessionChatContent({
                       Archive
                     </DropdownMenuItem>
                   )}
-                  <DropdownMenuSeparator />
+                  <DevServerMenuItems
+                    canRun={canRunDevServer}
+                    devServer={devServer}
+                  />
                   {supportsDiff && (
                     <DropdownMenuItem
                       disabled={!diff && !session.cachedDiff}
@@ -3109,6 +3146,7 @@ export function SessionChatContent({
                                     isMessageStreaming ? "streaming" : "static"
                                   }
                                   isAnimating={isMessageStreaming}
+                                  components={streamdownComponents}
                                   plugins={streamdownPlugins}
                                 >
                                   {p.text}
@@ -3737,6 +3775,16 @@ export function SessionChatContent({
 
       {/* Diff Viewer Modal */}
       <DiffViewer open={showDiffPanel} onOpenChange={setShowDiffPanel} />
+      <WorkspaceFileViewer
+        sessionId={session.id}
+        filePath={selectedWorkspaceFile}
+        open={selectedWorkspaceFile !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedWorkspaceFile(null);
+          }
+        }}
+      />
     </>
   );
 }
