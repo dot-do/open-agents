@@ -1,9 +1,8 @@
 "use client";
 
-import { ExternalLink, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { SessionTerminalLaunchResponse } from "@/app/api/sessions/[sessionId]/terminal/route";
-import { Button } from "@/components/ui/button";
 
 export const TERMINAL_HEARTBEAT_INTERVAL_MS = 60_000;
 
@@ -61,22 +60,12 @@ export function TerminalPanelView({ state }: { state: TerminalPanelState }) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center justify-end border-b border-border px-4 py-2">
-        <Button asChild size="sm" variant="outline">
-          <a href={state.terminalUrl} rel="noreferrer" target="_blank">
-            <ExternalLink className="mr-2 h-4 w-4" />
-            Open in new tab
-          </a>
-        </Button>
-      </div>
-      <iframe
-        className="h-full min-h-0 w-full flex-1 border-0 bg-background"
-        sandbox="allow-popups allow-scripts"
-        src={state.terminalUrl}
-        title="Session terminal"
-      />
-    </div>
+    <iframe
+      className="h-full min-h-0 w-full flex-1 border-0 bg-background"
+      sandbox="allow-popups allow-scripts"
+      src={state.terminalUrl}
+      title="Session terminal"
+    />
   );
 }
 
@@ -93,8 +82,15 @@ async function parseLaunchError(response: Response): Promise<string> {
   return `Request failed with status ${response.status}`;
 }
 
-export function TerminalPanel({ sessionId }: { sessionId: string }) {
+export function TerminalPanel({
+  sessionId,
+  onTerminalUrlChange,
+}: {
+  sessionId: string;
+  onTerminalUrlChange?: (terminalUrl: string | null) => void;
+}) {
   const [state, setState] = useState<TerminalPanelState>({ status: "loading" });
+  const readyTerminalUrl = state.status === "ready" ? state.terminalUrl : null;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -152,6 +148,24 @@ export function TerminalPanel({ sessionId }: { sessionId: string }) {
       controller.abort();
     };
   }, [sessionId]);
+
+  useEffect(() => {
+    if (!onTerminalUrlChange) {
+      return;
+    }
+
+    onTerminalUrlChange(readyTerminalUrl);
+  }, [onTerminalUrlChange, readyTerminalUrl]);
+
+  useEffect(() => {
+    if (!onTerminalUrlChange) {
+      return;
+    }
+
+    return () => {
+      onTerminalUrlChange(null);
+    };
+  }, [onTerminalUrlChange]);
 
   useEffect(() => {
     if (state.status !== "ready") {

@@ -864,6 +864,7 @@ export function SessionChatContent({
   const [mobileShareOpen, setMobileShareOpen] = useState(false);
   const [chatSwitcherOpen, setChatSwitcherOpen] = useState(false);
   const [terminalPanelOpen, setTerminalPanelOpen] = useState(false);
+  const [terminalPanelUrl, setTerminalPanelUrl] = useState<string | null>(null);
   const [cursorPosition, setCursorPosition] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [copiedAssistantMessageId, setCopiedAssistantMessageId] = useState<
@@ -2816,17 +2817,42 @@ export function SessionChatContent({
               isMobile={isMobile}
             />
 
-            <Sheet open={terminalPanelOpen} onOpenChange={setTerminalPanelOpen}>
+            <Sheet
+              open={terminalPanelOpen}
+              onOpenChange={(open) => {
+                setTerminalPanelOpen(open);
+                if (!open) {
+                  setTerminalPanelUrl(null);
+                }
+              }}
+            >
               <SheetContent
                 side="right"
                 className="flex w-full max-w-4xl flex-col gap-0 p-0 sm:max-w-3xl xl:max-w-5xl"
               >
-                <SheetHeader className="border-b border-border px-4 py-3">
-                  <SheetTitle>Terminal</SheetTitle>
+                <SheetHeader className="border-b border-border px-4 py-3 pr-16">
+                  <div className="flex items-center justify-between gap-3">
+                    <SheetTitle>Terminal</SheetTitle>
+                    {terminalPanelUrl ? (
+                      <Button asChild size="sm" variant="outline">
+                        <a
+                          href={terminalPanelUrl}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          <ExternalLink className="mr-2 h-4 w-4" />
+                          Open in new tab
+                        </a>
+                      </Button>
+                    ) : null}
+                  </div>
                 </SheetHeader>
                 <div className="min-h-0 flex-1">
                   {terminalPanelOpen ? (
-                    <TerminalPanel sessionId={session.id} />
+                    <TerminalPanel
+                      sessionId={session.id}
+                      onTerminalUrlChange={setTerminalPanelUrl}
+                    />
                   ) : null}
                 </div>
               </SheetContent>
