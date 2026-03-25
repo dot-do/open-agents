@@ -143,11 +143,14 @@ export async function POST(req: Request) {
       })
     : undefined;
 
-  // Determine if auto-commit should run after a natural finish.
+  // Determine if auto-commit and auto-PR should run after a natural finish.
   const shouldAutoCommitPush =
     sessionRecord.autoCommitPushOverride ??
     preferences?.autoCommitPush ??
     false;
+  const shouldAutoCreatePr =
+    shouldAutoCommitPush &&
+    (sessionRecord.autoCreatePrOverride ?? preferences?.autoCreatePr ?? false);
 
   // Start the durable workflow
   const run = await start(runAgentWorkflow, [
@@ -176,6 +179,7 @@ export async function POST(req: Request) {
         sessionRecord.repoOwner &&
         sessionRecord.repoName && {
           autoCommitEnabled: true,
+          autoCreatePrEnabled: shouldAutoCreatePr,
           sessionTitle: sessionRecord.title,
           repoOwner: sessionRecord.repoOwner,
           repoName: sessionRecord.repoName,

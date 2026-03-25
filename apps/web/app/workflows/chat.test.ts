@@ -12,7 +12,10 @@ const spies = {
   clearActiveStream: mock(() => Promise.resolve()),
   recordWorkflowUsage: mock(() => Promise.resolve()),
   refreshDiffCache: mock(() => Promise.resolve()),
-  runAutoCommitStep: mock(() => Promise.resolve()),
+  runAutoCommitStep: mock(() =>
+    Promise.resolve({ committed: false, pushed: false }),
+  ),
+  runAutoCreatePrStep: mock(() => Promise.resolve()),
 };
 
 // Track what the agent stream yields
@@ -336,6 +339,100 @@ describe("runAgentWorkflow", () => {
         repoName: "repo",
       }),
     );
+  });
+
+  test("runs auto PR creation when enabled and not aborted", async () => {
+    await runAgentWorkflow(
+      makeOptions({
+        autoCommitEnabled: true,
+        autoCreatePrEnabled: true,
+        sessionTitle: "My session",
+        repoOwner: "acme",
+        repoName: "repo",
+      }),
+    );
+
+    expect(spies.runAutoCreatePrStep).toHaveBeenCalledTimes(1);
+    expect(spies.runAutoCreatePrStep).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "user-1",
+        repoOwner: "acme",
+        repoName: "repo",
+      }),
+    );
+  });
+
+  test("skips auto PR creation when auto-commit does not push the latest commit", async () => {
+    spies.runAutoCommitStep.mockImplementationOnce(() =>
+      Promise.resolve({
+        committed: true,
+        pushed: false,
+        error: "Commit succeeded but push failed",
+      }),
+    );
+
+    await runAgentWorkflow(
+      makeOptions({
+        autoCommitEnabled: true,
+        autoCreatePrEnabled: true,
+        repoOwner: "acme",
+        repoName: "repo",
+      }),
+    );
+
+    expect(spies.runAutoCommitStep).toHaveBeenCalledTimes(1);
+    expect(spies.runAutoCreatePrStep).not.toHaveBeenCalled();
+  });
+
+  test("skips post-finish automation when the agent pauses for tool input", async () => {
+    agentFinishReason = "tool-calls";
+    agentRawFinishReason = "provider_tool_use";
+    agentStreamParts = [
+      {
+        type: "finish-step",
+        finishReason: "tool-calls",
+        rawFinishReason: "provider_tool_use",
+        usage: agentTotalUsage,
+      },
+    ];
+
+    await runAgentWorkflow(
+      makeOptions({
+        messages: [
+          {
+            id: "assistant-1",
+            role: "assistant",
+            parts: [
+              {
+                type: "tool-invocation",
+                state: "approval-requested",
+              },
+            ],
+            metadata: {},
+          },
+        ],
+        autoCommitEnabled: true,
+        autoCreatePrEnabled: true,
+        repoOwner: "acme",
+        repoName: "repo",
+      }),
+    );
+
+    expect(spies.runAutoCommitStep).not.toHaveBeenCalled();
+    expect(spies.runAutoCreatePrStep).not.toHaveBeenCalled();
+  });
+
+  test("skips auto PR creation when not enabled", async () => {
+    await runAgentWorkflow(
+      makeOptions({
+        autoCommitEnabled: true,
+        autoCreatePrEnabled: false,
+        repoOwner: "acme",
+        repoName: "repo",
+      }),
+    );
+
+    expect(spies.runAutoCreatePrStep).not.toHaveBeenCalled();
   });
 
   test("skips auto-commit when not enabled", async () => {

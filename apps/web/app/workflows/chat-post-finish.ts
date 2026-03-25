@@ -1,6 +1,7 @@
 import type { LanguageModelUsage } from "ai";
 import type { SandboxState, Sandbox } from "@open-harness/sandbox";
 import type { WebAgentUIMessage } from "@/app/types";
+import type { AutoCommitResult } from "@/lib/chat/auto-commit-direct";
 import {
   compareAndSetChatActiveStreamId,
   createChatMessageIfNotExists,
@@ -315,13 +316,13 @@ export async function runAutoCommitStep(params: {
   repoOwner: string;
   repoName: string;
   sandboxState: SandboxState;
-}): Promise<void> {
+}): Promise<AutoCommitResult> {
   "use step";
   try {
     const { connectSandbox } = await import("@open-harness/sandbox");
     const { performAutoCommit } = await import("@/lib/chat/auto-commit-direct");
     const sandbox = await connectSandbox(params.sandboxState);
-    await performAutoCommit({
+    return await performAutoCommit({
       sandbox,
       userId: params.userId,
       sessionId: params.sessionId,
@@ -331,5 +332,40 @@ export async function runAutoCommitStep(params: {
     });
   } catch (error) {
     console.error("[workflow] Auto-commit failed:", error);
+    return {
+      committed: false,
+      pushed: false,
+      error: error instanceof Error ? error.message : "Auto-commit failed",
+    };
+  }
+}
+
+export async function runAutoCreatePrStep(params: {
+  userId: string;
+  sessionId: string;
+  sessionTitle: string;
+  repoOwner: string;
+  repoName: string;
+  sandboxState: SandboxState;
+}): Promise<void> {
+  "use step";
+  try {
+    const { connectSandbox } = await import("@open-harness/sandbox");
+    const { performAutoCreatePr } = await import("@/lib/chat/auto-pr-direct");
+    const sandbox = await connectSandbox(params.sandboxState);
+    const result = await performAutoCreatePr({
+      sandbox,
+      userId: params.userId,
+      sessionId: params.sessionId,
+      sessionTitle: params.sessionTitle,
+      repoOwner: params.repoOwner,
+      repoName: params.repoName,
+    });
+
+    if (result.error) {
+      console.warn("[workflow] Auto-PR failed:", result.error);
+    }
+  } catch (error) {
+    console.error("[workflow] Auto-PR failed:", error);
   }
 }
