@@ -42,14 +42,17 @@ function buildAuthenticatedGitHubUrl(
 /**
  * Vercel Sandbox implementation using the @vercel/sandbox SDK.
  * Runs code in isolated Firecracker MicroVMs.
+ *
+ * With the beta SDK, sandboxes use persistent names as the primary identifier.
+ * The SDK auto-snapshots on stop and auto-resumes on next access.
  */
 export class VercelSandbox implements Sandbox {
   readonly type = "cloud" as const;
   /**
-   * Unique identifier for this sandbox.
-   * Use this to reconnect to an existing sandbox via `connectVercelSandbox({ sandboxId })`.
+   * Persistent sandbox name. This is the primary identifier used for
+   * all operations. Use this to reconnect via `Sandbox.get({ name })`.
    */
-  readonly id: string;
+  readonly name: string;
   readonly workingDirectory: string;
   readonly env?: Record<string, string>;
   /**
@@ -85,7 +88,7 @@ export class VercelSandbox implements Sandbox {
 
   private constructor(
     sdk: VercelSandboxSDK,
-    id: string,
+    name: string,
     workingDirectory: string,
     env?: Record<string, string>,
     currentBranch?: string,
@@ -95,7 +98,7 @@ export class VercelSandbox implements Sandbox {
     ports?: number[],
   ) {
     this.sdk = sdk;
-    this.id = id;
+    this.name = name;
     this.workingDirectory = workingDirectory;
     this.env = env;
     this.currentBranch = currentBranch;
@@ -333,11 +336,15 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
    * If a source is provided with `baseSnapshotId`, the repo is cloned after bootstrap.
    * Use `skipGitWorkspaceBootstrap` when preparing a new base snapshot so the workspace
    * stays free of `.git` for subsequent clones.
+   *
+   * When `name` is provided, the sandbox is created as a persistent sandbox that
+   * auto-snapshots on stop and auto-resumes on next `Sandbox.get({ name })`.
    */
   static async create(
     config: VercelSandboxConfig = {},
   ): Promise<VercelSandbox> {
     const {
+      name,
       source,
       gitUser,
       env,
@@ -361,10 +368,14 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
     // Calculate SDK timeout with buffer for beforeStop hook.
     const sdkTimeout = effectiveTimeout + TIMEOUT_BUFFER_MS;
 
+    // When a name is provided, the sandbox is persistent (auto-snapshots on stop).
+    // When no name is provided, opt out of persistence to keep ephemeral behavior
+    // (e.g., for base snapshot refresh sandboxes).
     const createBaseConfig = {
       resources: { vcpus },
       timeout: sdkTimeout,
       runtime,
+      ...(name ? { name } : { persistent: false }),
       ...(ports && { ports }),
     };
 
@@ -502,9 +513,12 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
     // Capture startTime AFTER all setup operations so users get their full timeout duration
     const startTime = Date.now();
 
+    // In the beta SDK, sandbox.name is the primary identifier.
+    const sandboxName = sdk.name;
+
     const sandbox = new VercelSandbox(
       sdk,
-      sdk.sandboxId,
+      sandboxName,
       workingDirectory,
       env,
       currentBranch,
@@ -523,10 +537,11 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
   }
 
   /**
-   * Connect to an existing Vercel Sandbox by ID.
+   * Connect to an existing Vercel Sandbox by name.
+   * With persistent sandboxes, this auto-resumes stopped sandboxes.
    */
   static async connect(
-    sandboxId: string,
+    name: string,
     options: {
       env?: Record<string, string>;
       hooks?: SandboxHooks;
@@ -540,7 +555,7 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       ports?: number[];
     } = {},
   ): Promise<VercelSandbox> {
-    const sdk = await VercelSandboxSDK.get({ sandboxId });
+    const sdk = await VercelSandboxSDK.get({ name });
 
     // Use provided remainingTimeout or default to DEFAULT_RECONNECT_TIMEOUT_MS
     // This ensures timeout tracking is always enabled for reconnected sandboxes,
@@ -551,7 +566,7 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
 
     const sandbox = new VercelSandbox(
       sdk,
-      sandboxId,
+      name,
       DEFAULT_WORKING_DIRECTORY,
       options.env,
       undefined,
@@ -818,6 +833,9 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
   /**
    * Create a native Vercel snapshot of the sandbox filesystem.
    * IMPORTANT: This automatically stops the sandbox after snapshot creation.
+   *
+   * For persistent sandboxes, prefer `stop()` which auto-snapshots.
+   * This method is still useful for the base snapshot refresh flow.
    */
   async snapshot(): Promise<SnapshotResult> {
     // Use native Vercel SDK snapshot method
@@ -841,6 +859,9 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
    * Stop and clean up the sandbox.
    * Calls beforeStop hook if provided before stopping the sandbox.
    * This method is idempotent - calling it multiple times is safe.
+   *
+   * For persistent sandboxes, stop() automatically snapshots the filesystem.
+   * The sandbox can be resumed later via `Sandbox.get({ name })`.
    */
   async stop(): Promise<void> {
     // Ensure stop() only runs once
@@ -879,11 +900,14 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
   /**
    * Get the current state for persistence.
    * Returns state that can be passed to `connectSandbox()` to restore this sandbox.
+   *
+   * For persistent sandboxes, returns `{ type, name, expiresAt }`.
+   * The name is sufficient to reconnect — the SDK handles snapshot/restore internally.
    */
   getState(): { type: "vercel" } & VercelState {
     return {
       type: "vercel",
-      sandboxId: this.id,
+      name: this.name,
       expiresAt: this.expiresAt,
     };
   }
@@ -892,20 +916,22 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
 /**
  * Connect to a Vercel Sandbox - either create a new one or reconnect to an existing one.
  *
- * @param config - Configuration options. Pass `sandboxId` to reconnect, or other options to create new.
+ * @param config - Configuration options. Pass `name` to reconnect to a persistent sandbox,
+ *   or other options to create new.
  *
  * @example
  * // Start empty sandbox
  * const sandbox = await connectVercelSandbox();
- * console.log(sandbox.id); // Save this ID for reconnection
+ * console.log(sandbox.name); // Save this name for reconnection
  *
  * @example
- * // Reconnect to an existing sandbox
- * const sandbox = await connectVercelSandbox({ sandboxId: "saved-sandbox-id" });
+ * // Reconnect to an existing persistent sandbox
+ * const sandbox = await connectVercelSandbox({ sandboxId: "session_abc123" });
  *
  * @example
  * // Clone a repo into a new sandbox
  * const sandbox = await connectVercelSandbox({
+ *   name: "session_abc123",
  *   source: {
  *     url: "https://github.com/owner/repo",
  *     branch: "develop",
@@ -915,6 +941,7 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
  * @example
  * // Clone with authentication, create a branch, and enable commits/push
  * const sandbox = await connectVercelSandbox({
+ *   name: "session_abc123",
  *   source: {
  *     url: "https://github.com/owner/repo",
  *     branch: "main",
@@ -930,8 +957,8 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
  *   },
  * });
  *
- * // The sandbox exposes the ID and current branch
- * console.log(sandbox.id); // "sandbox-abc123"
+ * // The sandbox exposes the name and current branch
+ * console.log(sandbox.name); // "session_abc123"
  * console.log(sandbox.currentBranch); // "agent/feature-123"
  *
  * // Now the agent can commit and push changes:
@@ -942,6 +969,7 @@ export async function connectVercelSandbox(
   config: VercelSandboxConfig | VercelSandboxConnectConfig = {},
 ): Promise<VercelSandbox> {
   if ("sandboxId" in config) {
+    // Legacy path: sandboxId is now treated as the name (beta SDK backfill)
     return VercelSandbox.connect(config.sandboxId, {
       env: config.env,
       hooks: config.hooks,

@@ -28,9 +28,11 @@ interface KickCall {
 interface ConnectConfig {
   state: {
     type: "vercel";
+    name?: string;
     sandboxId?: string;
   };
   options?: {
+    name?: string;
     gitUser?: {
       email?: string;
     };
@@ -205,7 +207,7 @@ describe("/api/sandbox lifecycle kicks", () => {
     ]);
     expect(connectConfigs[0]?.state).toEqual({
       type: "vercel",
-      sandboxId: "sbx-existing-1",
+      name: "sbx-existing-1",
     });
     expect(dotenvSyncCalls).toHaveLength(0);
     expect(

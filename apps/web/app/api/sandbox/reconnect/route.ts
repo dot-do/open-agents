@@ -12,6 +12,7 @@ import {
 import {
   clearSandboxState,
   hasRuntimeSandboxState,
+  isPersistentSandbox,
   isSandboxUnavailableError,
 } from "@/lib/sandbox/utils";
 
@@ -76,7 +77,9 @@ export async function GET(req: Request): Promise<Response> {
 
   const { sessionRecord } = sessionContext;
 
-  // No runtime sandbox state in DB
+  const persistent = isPersistentSandbox(sessionRecord.sandboxState);
+
+  // No runtime sandbox state in DB (and not a persistent sandbox with a name)
   if (!hasRuntimeSandboxState(sessionRecord.sandboxState)) {
     console.log(
       `[Reconnect] session=${sessionId} status=no_sandbox hasSnapshot=${!!sessionRecord.snapshotUrl} runtimeState=false`,
@@ -137,17 +140,22 @@ export async function GET(req: Request): Promise<Response> {
         : {}),
     });
 
+    // Persistent sandboxes always have a snapshot available (auto-snapshot on stop).
+    const hasSnapshot = persistent || !!sessionRecord.snapshotUrl;
+
     console.log(
-      `[Reconnect] session=${sessionId} status=connected hasSnapshot=${!!sessionRecord.snapshotUrl} expiresAt=${sandbox.expiresAt ?? "null"}`,
+      `[Reconnect] session=${sessionId} status=connected hasSnapshot=${hasSnapshot} persistent=${persistent} expiresAt=${sandbox.expiresAt ?? "null"}`,
     );
     return Response.json({
       status: "connected",
-      hasSnapshot: !!sessionRecord.snapshotUrl,
+      hasSnapshot,
       expiresAt: sandbox.expiresAt,
       lifecycle: buildLifecyclePayload(updatedSession ?? sessionRecord),
     } satisfies ReconnectResponse);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const hasSnapshot = persistent || !!sessionRecord.snapshotUrl;
+
     if (!isSandboxUnavailableError(message)) {
       console.warn(
         `[Reconnect] session=${sessionId} transient reconnect error, preserving runtime state: ${message}`,
@@ -161,23 +169,25 @@ export async function GET(req: Request): Promise<Response> {
           : undefined;
       return Response.json({
         status: "connected",
-        hasSnapshot: !!sessionRecord.snapshotUrl,
+        hasSnapshot,
         expiresAt: safeExpiresAt,
         lifecycle: buildLifecyclePayload(sessionRecord),
       } satisfies ReconnectResponse);
     }
 
-    // Sandbox no longer exists (expired or stopped)
+    // Sandbox no longer exists (expired or stopped).
+    // For persistent sandboxes, clearSandboxState preserves the name so it can
+    // be auto-resumed later.
     await updateSession(sessionId, {
       sandboxState: clearSandboxState(sessionRecord.sandboxState),
       ...buildHibernatedLifecycleUpdate(),
     });
     console.error(
-      `[Reconnect] session=${sessionId} status=expired hasSnapshot=${!!sessionRecord.snapshotUrl} error=${message}`,
+      `[Reconnect] session=${sessionId} status=expired hasSnapshot=${hasSnapshot} persistent=${persistent} error=${message}`,
     );
     return Response.json({
       status: "expired",
-      hasSnapshot: !!sessionRecord.snapshotUrl,
+      hasSnapshot,
       lifecycle: {
         serverTime: Date.now(),
         state: "hibernated",

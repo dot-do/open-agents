@@ -6,13 +6,35 @@ function hasNonEmptyString(value: unknown): value is string {
 }
 
 /**
+ * Check if a sandbox state has a persistent name.
+ * Persistent sandboxes auto-resume on command execution, so they are always
+ * "reachable" even when the underlying VM session is stopped.
+ */
+export function isPersistentSandbox(
+  state: SandboxState | null | undefined,
+): boolean {
+  if (!state) return false;
+  return "name" in state && hasNonEmptyString(state.name);
+}
+
+/**
  * Type guard to check if a sandbox is active and ready to accept operations.
+ *
+ * For persistent sandboxes (has `name`): always active — the SDK auto-resumes.
+ * For legacy sandboxes (has `sandboxId`): checks expiresAt to avoid sending
+ * commands to an expired VM.
  */
 export function isSandboxActive(
   state: SandboxState | null | undefined,
 ): state is SandboxState {
   if (!state) return false;
 
+  // Persistent sandboxes with a name are always "active" — auto-resume handles the rest
+  if (isPersistentSandbox(state)) {
+    return true;
+  }
+
+  // Legacy path: check expiry on non-persistent sandboxes
   if ("expiresAt" in state && state.expiresAt !== undefined) {
     if (Date.now() >= state.expiresAt - SANDBOX_EXPIRES_BUFFER_MS) {
       return false;
@@ -24,25 +46,34 @@ export function isSandboxActive(
 
 /**
  * Check if we can perform operations on a sandbox (snapshot, stop, etc.).
+ *
+ * For persistent sandboxes: always operable as long as `name` exists.
+ * For legacy sandboxes: requires `sandboxId`.
  */
 export function canOperateOnSandbox(
   state: SandboxState | null | undefined,
 ): state is SandboxState {
   if (!state) return false;
+  if (isPersistentSandbox(state)) return true;
   return hasRuntimeState(state);
 }
 
 /**
  * Check if an unknown value represents sandbox state with runtime data.
+ * Returns true if the state has a persistent `name` or a legacy `sandboxId`.
  */
 export function hasRuntimeSandboxState(state: unknown): boolean {
   if (!state || typeof state !== "object") return false;
 
   const sandboxState = state as {
+    name?: unknown;
     sandboxId?: unknown;
   };
 
-  return hasNonEmptyString(sandboxState.sandboxId);
+  return (
+    hasNonEmptyString(sandboxState.name) ||
+    hasNonEmptyString(sandboxState.sandboxId)
+  );
 }
 
 /**
@@ -65,12 +96,23 @@ function hasRuntimeState(state: SandboxState): boolean {
 }
 
 /**
- * Clear sandbox runtime state while preserving the type for future restoration.
+ * Clear sandbox runtime state while preserving identity for future restoration.
+ *
+ * For persistent sandboxes: keeps `name` (the stable identity) but clears
+ * transient fields like `expiresAt`. The SDK auto-resumes on next access.
+ *
+ * For legacy sandboxes: clears everything except `type`.
  */
 export function clearSandboxState(
   state: SandboxState | null | undefined,
 ): SandboxState | null {
   if (!state) return null;
 
+  // Persistent sandbox: preserve the name, clear transient state
+  if (isPersistentSandbox(state)) {
+    return { type: state.type, name: state.name } as SandboxState;
+  }
+
+  // Legacy: clear everything except type
   return { type: state.type } as SandboxState;
 }

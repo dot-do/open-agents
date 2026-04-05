@@ -1,10 +1,6 @@
 import "server-only";
 
-import {
-  connectSandbox,
-  type SandboxState,
-  type SnapshotResult,
-} from "@open-harness/sandbox";
+import { connectSandbox, type SandboxState } from "@open-harness/sandbox";
 import {
   getChatsBySessionId,
   getSessionById,
@@ -14,7 +10,11 @@ import {
   SANDBOX_EXPIRES_BUFFER_MS,
   SANDBOX_INACTIVITY_TIMEOUT_MS,
 } from "./config";
-import { canOperateOnSandbox, clearSandboxState } from "./utils";
+import {
+  canOperateOnSandbox,
+  clearSandboxState,
+  isPersistentSandbox,
+} from "./utils";
 
 export type SandboxLifecycleState =
   | "provisioning"
@@ -237,7 +237,10 @@ export async function evaluateSandboxLifecycle(
     });
 
     const sandbox = await connectSandbox(sandboxState);
-    if (!sandbox.snapshot) {
+    const persistent = isPersistentSandbox(sandboxState);
+
+    // For non-persistent (legacy) sandboxes, we need snapshot support to hibernate.
+    if (!persistent && !sandbox.snapshot) {
       await updateSession(sessionId, {
         ...buildActiveLifecycleUpdate(sandboxState),
       });
@@ -274,9 +277,28 @@ export async function evaluateSandboxLifecycle(
       }
     }
 
-    let snapshot: SnapshotResult;
+    if (persistent) {
+      // Persistent sandbox path: stop() auto-snapshots the filesystem.
+      // The name is preserved in state by clearSandboxState, so the sandbox
+      // can be auto-resumed on next access via Sandbox.get({ name }).
+      await sandbox.stop();
+
+      await updateSession(sessionId, {
+        sandboxState: clearSandboxState(sandboxState),
+        ...buildHibernatedLifecycleUpdate(),
+      });
+      console.log(
+        `[Lifecycle] Hibernated persistent sandbox for session ${sessionId} (reason=${reason}, name=${sandboxState.name}).`,
+      );
+      return { action: "hibernated" };
+    }
+
+    // Legacy (non-persistent) path: manual snapshot + stop.
+    let snapshotResult: Awaited<
+      ReturnType<NonNullable<typeof sandbox.snapshot>>
+    >;
     try {
-      snapshot = await sandbox.snapshot();
+      snapshotResult = await sandbox.snapshot!();
     } catch (snapshotError) {
       if (isSnapshotAlreadyInProgressError(snapshotError)) {
         const refreshedSession = await getSessionById(sessionId);
@@ -310,13 +332,13 @@ export async function evaluateSandboxLifecycle(
     const snapshotCreatedAt = new Date();
 
     await updateSession(sessionId, {
-      snapshotUrl: snapshot.snapshotId,
+      snapshotUrl: snapshotResult.snapshotId,
       snapshotCreatedAt,
       sandboxState: clearSandboxState(sandboxState),
       ...buildHibernatedLifecycleUpdate(),
     });
     console.log(
-      `[Lifecycle] Hibernated sandbox for session ${sessionId} (reason=${reason}, snapshotId=${snapshot.snapshotId}).`,
+      `[Lifecycle] Hibernated sandbox for session ${sessionId} (reason=${reason}, snapshotId=${snapshotResult.snapshotId}).`,
     );
     return { action: "hibernated" };
   } catch (error) {

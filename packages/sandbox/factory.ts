@@ -32,6 +32,12 @@ export interface ConnectOptions {
    * Skip git init in an empty workspace (e.g. when refreshing a Vercel base snapshot).
    */
   skipGitWorkspaceBootstrap?: boolean;
+  /**
+   * Persistent sandbox name.
+   * Passed through to the SDK when creating new sandboxes.
+   * For existing persistent sandboxes, the name comes from the state.
+   */
+  name?: string;
 }
 
 /**

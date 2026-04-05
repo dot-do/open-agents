@@ -2,6 +2,12 @@ import type { SandboxHooks } from "../interface";
 
 export interface VercelSandboxConfig {
   /**
+   * Persistent sandbox name. Unique within the Vercel project.
+   * When provided, the sandbox is created as a persistent sandbox that
+   * auto-snapshots on stop and auto-resumes on next access.
+   */
+  name?: string;
+  /**
    * Optional GitHub repository source to clone into the sandbox.
    * If not provided, the sandbox starts empty.
    */

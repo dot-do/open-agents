@@ -183,11 +183,11 @@ export async function POST(req: Request) {
   }
 
   // ============================================
-  // RECONNECT: Existing sandbox
+  // RECONNECT: Existing sandbox (legacy path — sandboxId treated as name)
   // ============================================
   if (providedSandboxId) {
     const sandbox = await connectSandbox({
-      state: { type: "vercel", sandboxId: providedSandboxId },
+      state: { type: "vercel", name: providedSandboxId },
       options: { env, ports: DEFAULT_SANDBOX_PORTS },
     });
 
@@ -245,12 +245,17 @@ export async function POST(req: Request) {
       }
     : undefined;
 
+  // Create a persistent sandbox with a name derived from the session ID.
+  // This name is stable across hibernation/resume cycles.
+  const sandboxName = sessionId ? `session_${sessionId}` : undefined;
+
   const sandbox = await connectSandbox({
     state: {
       type: "vercel",
       source,
     },
     options: {
+      name: sandboxName,
       env,
       gitUser,
       timeout: DEFAULT_SANDBOX_TIMEOUT_MS,
@@ -365,13 +370,22 @@ export async function DELETE(req: Request) {
     return Response.json({ success: true, alreadyStopped: true });
   }
 
-  // Connect and stop using unified API
+  // Connect and stop using unified API.
+  // For persistent sandboxes, stop() auto-snapshots the filesystem.
   const sandbox = await connectSandbox(sessionRecord.sandboxState);
   await sandbox.stop();
 
+  // clearSandboxState preserves `name` for persistent sandboxes so they can
+  // be resumed later. For persistent sandboxes, always mark as hibernated.
+  const isPersistent =
+    sessionRecord.sandboxState &&
+    "name" in sessionRecord.sandboxState &&
+    !!sessionRecord.sandboxState.name;
+
   await updateSession(sessionId, {
     sandboxState: clearSandboxState(sessionRecord.sandboxState),
-    lifecycleState: sessionRecord.snapshotUrl ? "hibernated" : "provisioning",
+    lifecycleState:
+      isPersistent || sessionRecord.snapshotUrl ? "hibernated" : "provisioning",
     sandboxExpiresAt: null,
     hibernateAfter: null,
     lifecycleRunId: null,

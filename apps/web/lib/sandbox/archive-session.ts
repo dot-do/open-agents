@@ -7,7 +7,11 @@ import {
   getPullRequestStatus,
 } from "@/lib/github/client";
 import { getRepoToken } from "@/lib/github/get-repo-token";
-import { canOperateOnSandbox, clearSandboxState } from "./utils";
+import {
+  canOperateOnSandbox,
+  clearSandboxState,
+  isPersistentSandbox,
+} from "./utils";
 
 type SessionRecord = NonNullable<Awaited<ReturnType<typeof getSessionById>>>;
 type SessionUpdateInput = Parameters<typeof updateSession>[1];
@@ -161,15 +165,19 @@ async function finalizeArchivedSessionSandbox(
     }
 
     const sandbox = await connectSandbox(archivedSession.sandboxState);
+    const persistent = isPersistentSandbox(archivedSession.sandboxState);
 
-    // Snapshot before stopping so the sandbox can be restored on unarchive.
-    // snapshot() automatically stops the sandbox, so no separate stop() needed.
+    // For persistent sandboxes: stop() auto-snapshots the filesystem.
+    // For legacy sandboxes: manual snapshot() before stopping.
     let snapshotFields: {
       snapshotUrl?: string;
       snapshotCreatedAt?: Date;
     } = {};
 
-    if (sandbox.snapshot) {
+    if (persistent) {
+      // Persistent sandbox: stop() handles snapshot automatically.
+      await sandbox.stop();
+    } else if (sandbox.snapshot) {
       try {
         const result = await sandbox.snapshot();
         snapshotFields = {
