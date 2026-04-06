@@ -378,12 +378,6 @@
   }
 }
 
-/*
- * Preview deployment banner offset.
- * When body.preview-deployment is set, the fixed banner sits at the top and
- * everything below it shifts down by the banner height — including fixed
- * sidebars and viewport-height containers.
- */
 body.preview-deployment {
   --preview-banner-h: 1.75rem;
 }
@@ -392,7 +386,6 @@ body.preview-deployment .preview-banner {
   height: var(--preview-banner-h);
 }
 
-/* Push the sidebar wrapper and fixed sidebar down */
 body.preview-deployment [data-slot="sidebar-wrapper"] {
   min-height: calc(100svh - var(--preview-banner-h));
   height: calc(100dvh - var(--preview-banner-h));
