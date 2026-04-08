@@ -1188,7 +1188,7 @@ export function GitPanel(props: GitPanelProps) {
   return (
     <div className="flex h-full w-72 shrink-0 flex-col border-l border-border bg-background xl:w-80">
       {/* Panel top bar: PR link or branch name — matches session header height */}
-      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-1.5">
         {/* Left: PR link or repo info */}
         <div className="flex min-w-0 items-center gap-2 min-h-7">
           {hasExistingPr && existingPrUrl ? (
@@ -1227,7 +1227,7 @@ export function GitPanel(props: GitPanelProps) {
       </div>
 
       {/* Tab bar — matches chat tabs sub-header height */}
-      <div className="flex items-center gap-0.5 border-b border-border bg-muted/30 px-2 py-2.5">
+      <div className="flex items-center gap-0.5 border-b border-border bg-muted/30 px-2 py-[7.5px]">
         {(
           [
             "code" as const,
