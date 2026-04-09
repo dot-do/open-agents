@@ -1,10 +1,38 @@
-import { type NextRequest } from "next/server";
 import { cookies } from "next/headers";
+import { type NextRequest } from "next/server";
 import { encrypt } from "@/lib/crypto";
-import { encryptJWE } from "@/lib/jwe/encrypt";
 import { upsertUser } from "@/lib/db/users";
+import { encryptJWE } from "@/lib/jwe/encrypt";
 import { SESSION_COOKIE_NAME } from "@/lib/session/constants";
 import { exchangeVercelCode, getVercelUserInfo } from "@/lib/vercel/oauth";
+
+const ALLOWED_VERCEL_EMAIL_DOMAIN = "vercel.com";
+const DEPLOY_YOUR_OWN_PATH = "/deploy-your-own";
+const MANAGED_TEMPLATE_REPO_OWNER = "vercel-labs";
+const MANAGED_TEMPLATE_REPO_SLUG = "open-harness";
+
+function clearVercelOauthCookies(store: Awaited<ReturnType<typeof cookies>>) {
+  store.delete("vercel_auth_state");
+  store.delete("vercel_code_verifier");
+  store.delete("vercel_auth_redirect_to");
+}
+
+function isManagedTemplateDeployment() {
+  return (
+    process.env.VERCEL_GIT_REPO_OWNER === MANAGED_TEMPLATE_REPO_OWNER &&
+    process.env.VERCEL_GIT_REPO_SLUG === MANAGED_TEMPLATE_REPO_SLUG
+  );
+}
+
+function hasAllowedEmailDomain(email?: string) {
+  const normalizedEmail = email?.trim().toLowerCase();
+  if (!normalizedEmail) {
+    return false;
+  }
+
+  const emailDomain = normalizedEmail.split("@")[1];
+  return emailDomain === ALLOWED_VERCEL_EMAIL_DOMAIN;
+}
 
 export async function GET(req: NextRequest): Promise<Response> {
   const code = req.nextUrl.searchParams.get("code");
@@ -44,6 +72,14 @@ export async function GET(req: NextRequest): Promise<Response> {
     });
 
     const userInfo = await getVercelUserInfo(tokens.access_token);
+
+    if (
+      isManagedTemplateDeployment() &&
+      !hasAllowedEmailDomain(userInfo.email)
+    ) {
+      clearVercelOauthCookies(cookieStore);
+      return Response.redirect(new URL(DEPLOY_YOUR_OWN_PATH, req.url));
+    }
 
     const tokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000);
 
@@ -94,9 +130,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       `${SESSION_COOKIE_NAME}=${sessionToken}; Path=/; Max-Age=${365 * 24 * 60 * 60}; Expires=${expires}; HttpOnly; ${process.env.NODE_ENV === "production" ? "Secure; " : ""}SameSite=Lax`,
     );
 
-    cookieStore.delete("vercel_auth_state");
-    cookieStore.delete("vercel_code_verifier");
-    cookieStore.delete("vercel_auth_redirect_to");
+    clearVercelOauthCookies(cookieStore);
 
     return response;
   } catch (error) {
