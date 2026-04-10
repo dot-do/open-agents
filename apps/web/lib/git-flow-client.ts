@@ -155,6 +155,24 @@ export async function commitAndPushSessionChanges(params: {
   });
 }
 
+export async function discardSessionUncommittedChanges(params: {
+  sessionId: string;
+}): Promise<void> {
+  const response = await fetch(
+    `/api/sessions/${params.sessionId}/discard-uncommitted`,
+    {
+      method: "POST",
+    },
+  );
+
+  const data: unknown = await response.json().catch(() => ({}));
+  const errorMessage = isRecord(data) ? readString(data.error) : undefined;
+
+  if (!response.ok) {
+    throw new Error(errorMessage ?? "Failed to discard uncommitted changes");
+  }
+}
+
 export async function generatePullRequestContent(params: {
   sessionId: string;
   sessionTitle: string;

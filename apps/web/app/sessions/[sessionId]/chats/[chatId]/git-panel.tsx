@@ -18,6 +18,7 @@ import {
   SquareDot,
   SquareMinus,
   SquarePlus,
+  Trash2,
   WandSparkles,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -30,9 +31,18 @@ import type {
   PullRequestMergeMethod,
 } from "@/lib/github/client";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
   TooltipContent,
@@ -53,11 +63,13 @@ import { cn } from "@/lib/utils";
 import {
   commitAndPushSessionChanges,
   createSessionBranch,
+  discardSessionUncommittedChanges,
   fetchRepoBranches,
   generatePullRequestContent,
 } from "@/lib/git-flow-client";
 import type { SessionGitStatus } from "@/hooks/use-session-git-status";
 import { useGitPanel } from "./git-panel-context";
+import { useSessionChatWorkspaceContext } from "./session-chat-context";
 
 /* ------------------------------------------------------------------ */
 /* Merge method labels / descriptions                                  */
@@ -1471,7 +1483,30 @@ export function GitPanel(props: GitPanelProps) {
     onPrDetected,
     isAgentWorking,
   } = props;
+  const { refreshFiles } = useSessionChatWorkspaceContext();
   const [baseBranch, setBaseBranch] = useState("main");
+  const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
+  const [discardError, setDiscardError] = useState<string | null>(null);
+  const [isDiscardingChanges, setIsDiscardingChanges] = useState(false);
+
+  const handleDiscardChanges = useCallback(async () => {
+    setIsDiscardingChanges(true);
+    setDiscardError(null);
+
+    try {
+      await discardSessionUncommittedChanges({ sessionId: session.id });
+      await Promise.all([refreshDiff(), refreshGitStatus(), refreshFiles()]);
+      setDiscardDialogOpen(false);
+    } catch (error) {
+      setDiscardError(
+        error instanceof Error
+          ? error.message
+          : "Failed to discard uncommitted changes",
+      );
+    } finally {
+      setIsDiscardingChanges(false);
+    }
+  }, [refreshDiff, refreshFiles, refreshGitStatus, session.id]);
 
   useEffect(() => {
     if (!session.repoOwner || !session.repoName) {
@@ -1722,25 +1757,54 @@ export function GitPanel(props: GitPanelProps) {
                       Uncommitted
                     </button>
                   </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      void Promise.all([refreshDiff(), refreshGitStatus()]);
-                    }}
-                    disabled={!hasSandbox || isRefreshingChanges}
-                    className="h-6 w-6 shrink-0 px-0"
-                    title="Refresh changes"
-                    aria-label="Refresh changes"
-                  >
-                    <RefreshCw
-                      className={cn(
-                        "h-3.5 w-3.5",
-                        isRefreshingChanges && "animate-spin",
-                      )}
-                    />
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    {hasUncommittedGitChanges ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setDiscardError(null);
+                          setDiscardDialogOpen(true);
+                        }}
+                        disabled={
+                          !hasSandbox || isDiscardingChanges || isAgentWorking
+                        }
+                        className="h-6 w-6 shrink-0 px-0 text-muted-foreground hover:text-destructive"
+                        title="Discard uncommitted changes"
+                        aria-label="Discard uncommitted changes"
+                      >
+                        {isDiscardingChanges ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-3.5 w-3.5" />
+                        )}
+                      </Button>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        void Promise.all([
+                          refreshDiff(),
+                          refreshGitStatus(),
+                          refreshFiles(),
+                        ]);
+                      }}
+                      disabled={!hasSandbox || isRefreshingChanges}
+                      className="h-6 w-6 shrink-0 px-0"
+                      title="Refresh changes"
+                      aria-label="Refresh changes"
+                    >
+                      <RefreshCw
+                        className={cn(
+                          "h-3.5 w-3.5",
+                          isRefreshingChanges && "animate-spin",
+                        )}
+                      />
+                    </Button>
+                  </div>
                 </div>
               )}
 
@@ -1834,6 +1898,57 @@ export function GitPanel(props: GitPanelProps) {
           </div>
         )}
       </div>
+
+      <Dialog
+        open={discardDialogOpen}
+        onOpenChange={(open) => {
+          if (!isDiscardingChanges) {
+            setDiscardDialogOpen(open);
+          }
+          if (!open) {
+            setDiscardError(null);
+          }
+        }}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Discard uncommitted changes?</DialogTitle>
+            <DialogDescription>
+              This permanently removes local uncommitted changes from the
+              sandbox. Committed changes stay intact.
+            </DialogDescription>
+          </DialogHeader>
+          {discardError ? (
+            <div className="rounded-md bg-destructive/10 p-2 text-xs text-destructive">
+              {discardError}
+            </div>
+          ) : null}
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline" disabled={isDiscardingChanges}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              variant="destructive"
+              onClick={() => void handleDiscardChanges()}
+              disabled={isDiscardingChanges}
+            >
+              {isDiscardingChanges ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Discarding...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Discard changes
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
