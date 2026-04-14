@@ -58,7 +58,7 @@ function ProfilePageSkeleton() {
   );
 }
 
-function AutomationsSkeleton() {
+function AutomationsListSkeleton() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -73,6 +73,32 @@ function AutomationsSkeleton() {
               <Skeleton className="h-4 w-48" />
               <Skeleton className="h-3 w-32" />
             </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AutomationsDetailSkeleton() {
+  return (
+    <div className="space-y-6">
+      <Skeleton className="h-4 w-40" />
+      <div className="flex items-center justify-between">
+        <div className="space-y-2">
+          <Skeleton className="h-8 w-64" />
+          <Skeleton className="h-4 w-40" />
+        </div>
+        <div className="flex gap-2">
+          <Skeleton className="h-9 w-24" />
+          <Skeleton className="h-9 w-9" />
+        </div>
+      </div>
+      <div className="space-y-3">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="space-y-1">
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="h-4 w-48" />
           </div>
         ))}
       </div>
@@ -261,10 +287,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const activeItem = sidebarItems.find(
     (item) => pathname === item.href || pathname.startsWith(item.href + "/"),
   );
-  const fallbackTitle = activeItem?.label ?? "Profile";
+  const isAutomationDetail =
+    pathname.startsWith("/settings/automations/") &&
+    pathname !== "/settings/automations/new";
+  const fallbackTitle = isAutomationDetail
+    ? "Automation"
+    : (activeItem?.label ?? "Profile");
   const fallbackContent =
-    activeItem?.id === "automations" ? (
-      <AutomationsSkeleton />
+    isAutomationDetail ? (
+      <AutomationsDetailSkeleton />
+    ) : activeItem?.id === "automations" ? (
+      <AutomationsListSkeleton />
     ) : activeItem?.id === "connections" ? (
       <ConnectionsPageSkeleton />
     ) : activeItem?.id === "preferences" ? (

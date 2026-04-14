@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import type { GlobalSkillRef } from "@/lib/skills/global-skill-refs";
 import type {
   AutomationRunStatus,
@@ -583,4 +583,48 @@ export async function setAutomationSchedulerState(params: {
     .returning();
 
   return automation ?? null;
+}
+
+export async function listAutomationRunsByUserId(
+  userId: string,
+  limit = 50,
+): Promise<AutomationRun[]> {
+  return db.query.automationRuns.findMany({
+    where: eq(automationRuns.userId, userId),
+    orderBy: [desc(automationRuns.triggeredAt), desc(automationRuns.createdAt)],
+    limit,
+  });
+}
+
+export async function getAutomationRunStats(userId: string) {
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+  const rows = await db
+    .select({
+      status: automationRuns.status,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(automationRuns)
+    .where(
+      and(
+        eq(automationRuns.userId, userId),
+        gte(automationRuns.triggeredAt, sevenDaysAgo),
+      ),
+    )
+    .groupBy(automationRuns.status);
+
+  let successful = 0;
+  let failed = 0;
+  let total = 0;
+  for (const row of rows) {
+    total += row.count;
+    if (row.status === "completed") {
+      successful += row.count;
+    } else if (row.status === "failed" || row.status === "cancelled") {
+      failed += row.count;
+    }
+  }
+
+  return { successful, failed, total };
 }

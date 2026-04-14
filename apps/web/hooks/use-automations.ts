@@ -180,3 +180,48 @@ export function useAutomationDetail(automationId: string | null) {
     mutate,
   };
 }
+
+type AutomationStatsResponse = {
+  totalAutomations: number;
+  enabledAutomations: number;
+  runs7d: {
+    successful: number;
+    failed: number;
+    total: number;
+  };
+};
+
+export function useAutomationStats() {
+  const { data, error, isLoading } = useSWR<AutomationStatsResponse>(
+    "/api/automations/stats",
+    fetcher,
+  );
+
+  return {
+    stats: data ?? null,
+    error,
+    isLoading,
+  };
+}
+
+export interface AutomationRunWithName extends AutomationRunRecord {
+  automationId: string;
+  automationName: string;
+}
+
+type AllRunsResponse = {
+  runs: AutomationRunWithName[];
+};
+
+export function useAllAutomationRuns() {
+  const { data, error, isLoading } = useSWR<AllRunsResponse>(
+    "/api/automations/runs",
+    fetcher,
+  );
+
+  return {
+    runs: data?.runs ?? [],
+    error,
+    isLoading,
+  };
+}

@@ -1,9 +1,11 @@
 "use client";
 
 import {
+  ChevronRight,
   ExternalLink,
   GitPullRequest,
   Loader2,
+  MoreHorizontal,
   Play,
   Trash2,
 } from "lucide-react";
@@ -15,10 +17,24 @@ import {
   useAutomationDetail,
   useAutomations,
   type AutomationRecord,
-  type AutomationRunRecord,
 } from "@/hooks/use-automations";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import {
   formatAutomationDateTime,
@@ -119,56 +135,19 @@ function DetailSkeleton() {
   );
 }
 
-function RunHistoryRow({ run }: { run: AutomationRunRecord }) {
-  return (
-    <div className="flex items-center justify-between gap-3 px-3 py-3">
-      <div className="flex min-w-0 items-center gap-3">
-        <span
-          className={cn(
-            "h-2 w-2 shrink-0 rounded-full",
-            getRunStatusDotColor(run.status),
-          )}
-        />
-        <div className="min-w-0">
-          <p className="text-sm font-medium">
-            {run.triggeredAt
-              ? new Date(run.triggeredAt).toLocaleString()
-              : "Automation run"}
-          </p>
-          <p className="truncate text-xs text-muted-foreground">
-            {run.resultSummary ?? run.needsAttentionReason ?? "No summary yet"}
-          </p>
-        </div>
-      </div>
-
-      <div className="flex shrink-0 items-center gap-2">
-        <span className="text-xs uppercase tracking-wide text-muted-foreground">
-          {run.status.replaceAll("_", " ")}
-        </span>
-        {run.sessionId ? (
-          <Button asChild size="sm" variant="ghost" className="h-7 px-2">
-            <Link href={`/sessions/${run.sessionId}`}>
-              <ExternalLink className="h-3.5 w-3.5" />
-            </Link>
-          </Button>
-        ) : null}
-        {run.prUrl ? (
-          <Button asChild size="sm" variant="ghost" className="h-7 px-2">
-            <a href={run.prUrl} rel="noreferrer" target="_blank">
-              <GitPullRequest className="h-3.5 w-3.5" />
-            </a>
-          </Button>
-        ) : null}
-        {run.compareUrl ? (
-          <Button asChild size="sm" variant="ghost" className="h-7 px-2">
-            <a href={run.compareUrl} rel="noreferrer" target="_blank">
-              <ExternalLink className="h-3.5 w-3.5" />
-            </a>
-          </Button>
-        ) : null}
-      </div>
-    </div>
-  );
+function formatShortDate(value: string | null) {
+  if (!value) return "--";
+  const date = new Date(value);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 1) return "just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 30) return `${diffDays}d ago`;
+  return date.toLocaleDateString();
 }
 
 export function AutomationDetailPage({
@@ -228,6 +207,18 @@ export function AutomationDetailPage({
 
   return (
     <div className="space-y-8">
+      {/* ── Breadcrumb ── */}
+      <nav className="flex items-center gap-1 text-sm text-muted-foreground">
+        <Link
+          href="/settings/automations"
+          className="hover:text-foreground hover:underline"
+        >
+          Automations
+        </Link>
+        <ChevronRight className="h-3.5 w-3.5" />
+        <span className="text-foreground">{automation.name}</span>
+      </nav>
+
       {/* ── Header ── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
@@ -272,151 +263,235 @@ export function AutomationDetailPage({
             )}
             Run now
           </Button>
-          <Button
-            disabled={isDeleting}
-            variant="destructive"
-            onClick={async () => {
-              const confirmed = window.confirm(
-                `Delete automation "${automation.name}"? Existing sessions will remain, but future runs will stop.`,
-              );
-              if (!confirmed) return;
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-9 w-9">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                disabled={isDeleting}
+                onClick={async () => {
+                  const confirmed = window.confirm(
+                    `Delete automation "${automation.name}"? Existing sessions will remain, but future runs will stop.`,
+                  );
+                  if (!confirmed) return;
 
-              setIsDeleting(true);
-              try {
-                await deleteAutomation(automation.id);
-                router.push("/settings/automations");
-              } finally {
-                setIsDeleting(false);
-              }
-            }}
-          >
-            <Trash2 className="h-4 w-4" />
-            Delete
-          </Button>
-        </div>
-      </div>
-
-      {/* ── Schedule ── */}
-      <div className="space-y-4">
-        <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Schedule
-        </h2>
-        <div className="space-y-4">
-          <div className="grid gap-1">
-            <p className="text-xs font-medium text-muted-foreground">
-              Frequency
-            </p>
-            <p className="text-sm">{automation.scheduleSummary}</p>
-          </div>
-          <div className="grid gap-1">
-            <p className="text-xs font-medium text-muted-foreground">
-              Next run
-            </p>
-            <p className="text-sm">{nextPreview}</p>
-          </div>
-          {cronConfig ? (
-            <div className="grid gap-1">
-              <p className="text-xs font-medium text-muted-foreground">
-                Timezone
-              </p>
-              <p className="text-sm">{cronConfig.timezone}</p>
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      {/* ── Latest Run ── */}
-      <div className="space-y-4 border-t border-border/50 pt-8">
-        <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Latest Run
-        </h2>
-        {automation.lastRunStatus ? (
-          <div
-            className={cn(
-              "rounded-md border-l-2 bg-muted/20 px-4 py-3",
-              getRunStatusBorderColor(automation.lastRunStatus),
-            )}
-          >
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-xs font-medium uppercase tracking-wide">
-                {automation.lastRunStatus.replaceAll("_", " ")}
-              </span>
-              {automation.lastRunAt ? (
-                <span className="text-xs text-muted-foreground">
-                  {formatRunTime(automation.lastRunAt)}
-                </span>
-              ) : null}
-            </div>
-            {automation.lastRunSummary ? (
-              <p className="mt-1 text-sm text-muted-foreground">
-                {automation.lastRunSummary}
-              </p>
-            ) : null}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            No runs yet. Use Run now or wait for the next scheduled execution.
-          </p>
-        )}
-      </div>
-
-      {/* ── Tools ── */}
-      <div className="space-y-4 border-t border-border/50 pt-8">
-        <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Tools
-        </h2>
-        {automation.enabledToolTypes.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {automation.enabledToolTypes.map((toolType) => (
-              <span
-                key={toolType}
-                className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground"
+                  setIsDeleting(true);
+                  try {
+                    await deleteAutomation(automation.id);
+                    router.push("/settings/automations");
+                  } finally {
+                    setIsDeleting(false);
+                  }
+                }}
               >
-                {toolType.replaceAll("_", " ")}
-              </span>
-            ))}
+                <Trash2 className="h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      <Tabs defaultValue="overview" className="block space-y-6">
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="edit">Edit</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="flex-none">
+          <div className="space-y-8">
+            {/* ── Schedule ── */}
+            <div className="space-y-4">
+              <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Schedule
+              </h2>
+              <div className="space-y-4">
+                <div className="grid gap-1">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Frequency
+                  </p>
+                  <p className="text-sm">{automation.scheduleSummary}</p>
+                </div>
+                <div className="grid gap-1">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Next run
+                  </p>
+                  <p className="text-sm">{nextPreview}</p>
+                </div>
+                {cronConfig ? (
+                  <div className="grid gap-1">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Timezone
+                    </p>
+                    <p className="text-sm">{cronConfig.timezone}</p>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            {/* ── Latest Run ── */}
+            <div className="space-y-4 border-t border-border/50 pt-8">
+              <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Latest Run
+              </h2>
+              {automation.lastRunStatus ? (
+                <div
+                  className={cn(
+                    "rounded-md border-l-2 bg-muted/20 px-4 py-3",
+                    getRunStatusBorderColor(automation.lastRunStatus),
+                  )}
+                >
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-xs font-medium uppercase tracking-wide">
+                      {automation.lastRunStatus.replaceAll("_", " ")}
+                    </span>
+                    {automation.lastRunAt ? (
+                      <span className="text-xs text-muted-foreground">
+                        {formatRunTime(automation.lastRunAt)}
+                      </span>
+                    ) : null}
+                  </div>
+                  {automation.lastRunSummary ? (
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {automation.lastRunSummary}
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No runs yet. Use Run now or wait for the next scheduled
+                  execution.
+                </p>
+              )}
+            </div>
+
+            {/* ── Tools ── */}
+            <div className="space-y-4 border-t border-border/50 pt-8">
+              <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Tools
+              </h2>
+              {automation.enabledToolTypes.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {automation.enabledToolTypes.map((toolType) => (
+                    <span
+                      key={toolType}
+                      className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground"
+                    >
+                      {toolType.replaceAll("_", " ")}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No external tools enabled
+                </p>
+              )}
+            </div>
+
+            {/* ── Run History ── */}
+            <div className="space-y-4 border-t border-border/50 pt-8">
+              <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Run History
+              </h2>
+
+              {runs.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  No runs yet. Use Run now or wait for the next scheduled
+                  execution.
+                </p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="hidden sm:table-cell">
+                        Triggered
+                      </TableHead>
+                      <TableHead className="hidden md:table-cell">
+                        Summary
+                      </TableHead>
+                      <TableHead className="w-20" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {runs.map((run) => (
+                      <TableRow key={run.id}>
+                        <TableCell>
+                          <span className="flex items-center gap-1.5">
+                            <span
+                              className={cn(
+                                "h-1.5 w-1.5 rounded-full",
+                                getRunStatusDotColor(run.status),
+                              )}
+                            />
+                            <span className="text-xs">
+                              {run.status.replaceAll("_", " ")}
+                            </span>
+                          </span>
+                        </TableCell>
+                        <TableCell className="hidden text-xs text-muted-foreground sm:table-cell">
+                          {formatShortDate(run.triggeredAt)}
+                        </TableCell>
+                        <TableCell className="hidden max-w-xs truncate text-xs text-muted-foreground md:table-cell">
+                          {run.resultSummary ?? "--"}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            {run.sessionId ? (
+                              <Button
+                                asChild
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2"
+                              >
+                                <Link href={`/sessions/${run.sessionId}`}>
+                                  <ExternalLink className="h-3.5 w-3.5" />
+                                </Link>
+                              </Button>
+                            ) : null}
+                            {run.prUrl ? (
+                              <Button
+                                asChild
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2"
+                              >
+                                <a
+                                  href={run.prUrl}
+                                  rel="noreferrer"
+                                  target="_blank"
+                                >
+                                  <GitPullRequest className="h-3.5 w-3.5" />
+                                </a>
+                              </Button>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
           </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            No external tools enabled
-          </p>
-        )}
-      </div>
+        </TabsContent>
 
-      {/* ── Edit ── */}
-      <div className="space-y-4 border-t border-border/50 pt-8">
-        <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Edit
-        </h2>
-        <AutomationForm
-          key={automation.id}
-          initialValue={toFormValue(automation)}
-          submitLabel="Save changes"
-          onSubmit={async (input) => {
-            await updateAutomation(automation.id, input);
-            await mutate();
-          }}
-        />
-      </div>
-
-      {/* ── Run History ── */}
-      <div className="space-y-4 border-t border-border/50 pt-8">
-        <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Run History
-        </h2>
-
-        {runs.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            No runs yet. Use Run now or wait for the next scheduled execution.
-          </p>
-        ) : (
-          <div className="divide-y divide-border/60 rounded-lg border border-border/70">
-            {runs.map((run) => (
-              <RunHistoryRow key={run.id} run={run} />
-            ))}
-          </div>
-        )}
-      </div>
+        <TabsContent value="edit" className="flex-none">
+          <AutomationForm
+            key={automation.id}
+            initialValue={toFormValue(automation)}
+            submitLabel="Save changes"
+            onSubmit={async (input) => {
+              await updateAutomation(automation.id, input);
+              await mutate();
+            }}
+          />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
