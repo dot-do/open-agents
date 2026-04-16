@@ -16,6 +16,11 @@ interface ConnectOptions {
   persistent?: boolean;
   snapshotExpiration?: number;
   skipGitWorkspaceBootstrap?: boolean;
+  metadata?: {
+    tenantId?: string;
+    sessionId?: string;
+    userId?: string;
+  };
 }
 
 function getRemainingTimeout(
@@ -91,6 +96,7 @@ function buildCreateConfig(
     ...(options?.skipGitWorkspaceBootstrap && {
       skipGitWorkspaceBootstrap: true,
     }),
+    ...(options?.metadata && { metadata: options.metadata }),
   };
 }
 

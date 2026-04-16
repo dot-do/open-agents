@@ -42,6 +42,22 @@ export interface ConnectOptions {
    * Skip git init in an empty workspace (e.g. when refreshing a Vercel base snapshot).
    */
   skipGitWorkspaceBootstrap?: boolean;
+  /**
+   * Multi-tenant metadata attached to the sandbox for cost attribution,
+   * quota enforcement, and admin tooling. Propagated to Vercel sandbox `tags`.
+   */
+  metadata?: SandboxMetadata;
+}
+
+/**
+ * Tenant attribution metadata for a sandbox instance.
+ * Values are stamped onto the underlying Vercel sandbox as `tags` so that
+ * listing, filtering, and hard-kill operations can find sandboxes by tenant.
+ */
+export interface SandboxMetadata {
+  tenantId?: string;
+  sessionId?: string;
+  userId?: string;
 }
 
 /**

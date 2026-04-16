@@ -32,6 +32,11 @@ import {
   hasResumableSandboxState,
 } from "@/lib/sandbox/utils";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { requireTenantCtx, TenantAccessError } from "@/lib/db/tenant-context";
+import {
+  QuotaExceededError,
+  checkConcurrencyQuota,
+} from "@/lib/quotas";
 // import { buildDevelopmentDotenvFromVercelProject } from "@/lib/vercel/projects";
 // import { getUserVercelToken } from "@/lib/vercel/token";
 
@@ -129,6 +134,36 @@ export async function POST(req: Request) {
     return Response.json({ error: "Access denied" }, { status: 403 });
   }
 
+  // Resolve tenant context (Wave 1 tenancy helper). Used for metadata tagging
+  // and concurrency/minutes/cost quota enforcement.
+  let tenantCtx;
+  try {
+    tenantCtx = await requireTenantCtx(req as unknown as import("next/server").NextRequest);
+  } catch (error) {
+    if (error instanceof TenantAccessError) {
+      return Response.json({ error: error.message }, { status: 403 });
+    }
+    throw error;
+  }
+
+  try {
+    await checkConcurrencyQuota(tenantCtx.tenantId);
+  } catch (error) {
+    if (error instanceof QuotaExceededError) {
+      return Response.json(
+        {
+          error: error.message,
+          code: "quota_exceeded",
+          quota: error.quota,
+          limit: error.limit,
+          current: error.current,
+        },
+        { status: 429 },
+      );
+    }
+    throw error;
+  }
+
   const githubToken = await getUserGitHubToken(session.user.id);
 
   if (repoUrl) {
@@ -205,6 +240,11 @@ export async function POST(req: Request) {
       persistent: !!sandboxName,
       resume: !!sandboxName,
       createIfMissing: !!sandboxName,
+      metadata: {
+        tenantId: tenantCtx.tenantId,
+        userId: session.user.id,
+        ...(sessionId ? { sessionId } : {}),
+      },
     },
   });
 

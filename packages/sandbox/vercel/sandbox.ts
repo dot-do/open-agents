@@ -41,6 +41,23 @@ const DEFAULT_NETWORK_POLICY: SandboxNetworkPolicy = {
   },
 };
 
+/**
+ * Build Vercel sandbox `tags` from tenant metadata. The Vercel SDK caps tags
+ * at 5 keys and only accepts string values; we keep the payload small and
+ * drop empty values.
+ */
+function buildTagsFromMetadata(
+  metadata?: { tenantId?: string; sessionId?: string; userId?: string },
+): Record<string, string> | undefined {
+  if (!metadata) return undefined;
+  const entries: [string, string][] = [];
+  if (metadata.tenantId) entries.push(["tenantId", metadata.tenantId]);
+  if (metadata.sessionId) entries.push(["sessionId", metadata.sessionId]);
+  if (metadata.userId) entries.push(["userId", metadata.userId]);
+  if (entries.length === 0) return undefined;
+  return Object.fromEntries(entries);
+}
+
 function buildGitHubCredentialBrokeringPolicy(
   token?: string,
 ): SandboxNetworkPolicy {
@@ -509,6 +526,7 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       snapshotExpiration,
       hooks,
       skipGitWorkspaceBootstrap = false,
+      metadata,
     } = config;
 
     // Clamp proactive timeout to stay under the SDK's hard max when buffer is applied.
@@ -522,6 +540,7 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
     // Calculate SDK timeout with buffer for beforeStop hook.
     const sdkTimeout = effectiveTimeout + TIMEOUT_BUFFER_MS;
 
+    const tags = buildTagsFromMetadata(metadata);
     const createBaseConfig = {
       ...(name ? { name } : {}),
       resources: { vcpus },
@@ -531,6 +550,7 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       networkPolicy: buildGitHubCredentialBrokeringPolicy(githubToken),
       ...(ports && { ports }),
       ...(snapshotExpiration !== undefined && { snapshotExpiration }),
+      ...(tags && { tags }),
     };
 
     let sdk: VercelSandboxSDK;

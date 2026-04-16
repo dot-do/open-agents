@@ -3,6 +3,7 @@ import type { ModelVariant } from "@/lib/model-variants";
 import type { GlobalSkillRef } from "@/lib/skills/global-skill-refs";
 import {
   boolean,
+  date,
   index,
   integer,
   jsonb,
@@ -524,3 +525,48 @@ export const usageEvents = pgTable(
 
 export type UsageEvent = typeof usageEvents.$inferSelect;
 export type NewUsageEvent = typeof usageEvents.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Tenant quotas + usage counters (P0 sandbox isolation & cost control)
+// ---------------------------------------------------------------------------
+// Defaults are intentionally conservative so multi-tenant go-live cannot
+// result in unbounded spend. Ops can raise limits per-tenant via the
+// `admin:sandboxes` CLI or direct SQL. Rows are created lazily — absence
+// implies default limits.
+export const tenantQuotas = pgTable("tenant_quotas", {
+  tenantId: text("tenant_id")
+    .primaryKey()
+    .references(() => tenants.id, { onDelete: "cascade" }),
+  maxConcurrentSandboxes: integer("max_concurrent_sandboxes")
+    .notNull()
+    .default(3),
+  maxMonthlyMinutes: integer("max_monthly_minutes").notNull().default(600),
+  maxDailyCostCents: integer("max_daily_cost_cents").notNull().default(500),
+  hardKillEnabled: boolean("hard_kill_enabled").notNull().default(true),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type TenantQuota = typeof tenantQuotas.$inferSelect;
+export type NewTenantQuota = typeof tenantQuotas.$inferInsert;
+
+export const tenantUsageCounters = pgTable(
+  "tenant_usage_counters",
+  {
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    // Period bucket — month start for monthly minutes, day start for daily cost.
+    // Callers pick the granularity; a single row per (tenant, periodStart).
+    periodStart: date("period_start").notNull(),
+    sandboxMinutes: integer("sandbox_minutes").notNull().default(0),
+    costCents: integer("cost_cents").notNull().default(0),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.tenantId, table.periodStart] }),
+    index("tenant_usage_counters_tenant_idx").on(table.tenantId),
+  ],
+);
+
+export type TenantUsageCounter = typeof tenantUsageCounters.$inferSelect;
+export type NewTenantUsageCounter = typeof tenantUsageCounters.$inferInsert;

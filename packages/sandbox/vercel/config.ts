@@ -91,6 +91,15 @@ export interface VercelSandboxConfig {
    * beforeStop is called before the sandbox is stopped.
    */
   hooks?: SandboxHooks;
+  /**
+   * Multi-tenant attribution metadata. Stamped onto Vercel sandbox `tags`
+   * (max 5 keys) so sandboxes can be listed / killed per-tenant.
+   */
+  metadata?: {
+    tenantId?: string;
+    sessionId?: string;
+    userId?: string;
+  };
 }
 
 /**
@@ -114,4 +123,14 @@ export interface VercelSandboxConnectConfig {
   ports?: number[];
   /** Whether a stopped sandbox should be explicitly resumed */
   resume?: boolean;
+  /**
+   * Multi-tenant attribution metadata. Only consulted when the sandbox is
+   * (re)created via the createIfMissing flow; existing sandboxes retain
+   * their original tags from creation time.
+   */
+  metadata?: {
+    tenantId?: string;
+    sessionId?: string;
+    userId?: string;
+  };
 }

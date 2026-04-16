@@ -225,6 +225,13 @@
       "when": 1776297884722,
       "tag": "0031_tenancy_not_null",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1776298376257,
+      "tag": "0032_handy_freak",
+      "breakpoints": true
     }
   ]
 }

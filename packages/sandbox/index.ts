@@ -18,6 +18,7 @@ export {
   type SandboxState,
   type ConnectOptions,
   type SandboxConnectConfig,
+  type SandboxMetadata,
 } from "./factory";
 
 // vercel
