@@ -136,8 +136,15 @@ function redirectAndClearCookies(url: string | URL): NextResponse {
   const response = NextResponse.redirect(url);
   response.cookies.delete("github_app_install_redirect_to");
   response.cookies.delete("github_app_install_state");
+  response.cookies.delete("github_app_install_tenant_id");
   response.cookies.delete("github_reconnect");
   return response;
+}
+
+function sanitizeTenantId(value: string | null | undefined): string | null {
+  if (!value) return null;
+  if (!/^[A-Za-z0-9_-]{6,64}$/.test(value)) return null;
+  return value;
 }
 
 export async function GET(req: Request): Promise<Response> {
@@ -206,12 +213,17 @@ export async function GET(req: Request): Promise<Response> {
     (await getGitHubAccount(session.user.id))?.username ??
     null;
 
+  const installTenantId = sanitizeTenantId(
+    cookieStore.get("github_app_install_tenant_id")?.value,
+  );
+
   if (resolvedToken && personalAccountLogin) {
     try {
       syncedInstallationsCount = await syncUserInstallations(
         session.user.id,
         resolvedToken,
         personalAccountLogin,
+        installTenantId ? { tenantId: installTenantId } : undefined,
       );
       synced = true;
     } catch (error) {

@@ -42,6 +42,7 @@ export async function GET(req: NextRequest) {
     hasGitHub,
     hasGitHubAccount,
     hasGitHubInstallations,
+    activeTenantId: session.activeTenantId,
   };
 
   return Response.json(data);

@@ -8,6 +8,7 @@ import {
   updateInstallationsByInstallationId,
   upsertInstallation,
 } from "@/lib/db/installations";
+import { getDefaultMembershipForUser } from "@/lib/db/memberships";
 import { updateSession } from "@/lib/db/sessions";
 import { db } from "@/lib/db/client";
 import { sessions } from "@/lib/db/schema";
@@ -227,7 +228,24 @@ export async function POST(req: Request): Promise<Response> {
     (event === "installation" || event === "installation_repositories")
   ) {
     for (const row of existing) {
+      // Preserve the row's tenantId when it is already set; otherwise fall
+      // back to the installing user's personal tenant. This handles rows
+      // written before tenant ownership was enforced and defends against
+      // any future nullable state.
+      let tenantId = row.tenantId ?? null;
+      if (!tenantId) {
+        const personal = await getDefaultMembershipForUser(row.userId);
+        tenantId = personal?.tenantId ?? null;
+      }
+      if (!tenantId) {
+        console.error("[GitHub webhook] no tenant resolvable for installation", {
+          installationId,
+          userId: row.userId,
+        });
+        continue;
+      }
       await upsertInstallation({
+        tenantId,
         userId: row.userId,
         installationId,
         accountLogin: account.login,

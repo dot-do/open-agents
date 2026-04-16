@@ -3,6 +3,7 @@ import {
   deleteInstallationsNotInList,
   upsertInstallation,
 } from "@/lib/db/installations";
+import { getDefaultMembershipForUser } from "@/lib/db/memberships";
 
 const userInstallationSchema = z.object({
   id: z.number(),
@@ -148,14 +149,29 @@ export async function syncUserInstallations(
   userId: string,
   userToken: string,
   personalAccountLogin: string,
+  options: { tenantId?: string } = {},
 ): Promise<number> {
   const installations = await fetchUserInstallations(userToken);
   const syncableInstallations = installations.filter((installation) =>
     isSyncableInstallation(installation, personalAccountLogin),
   );
 
+  // Prefer an explicit tenant (passed by tenant-aware install flows);
+  // otherwise attribute the sync to the user's personal tenant.
+  let tenantId = options.tenantId;
+  if (!tenantId) {
+    const personal = await getDefaultMembershipForUser(userId);
+    tenantId = personal?.tenantId;
+  }
+  if (!tenantId) {
+    throw new Error(
+      `syncUserInstallations: user ${userId} has no resolvable tenant`,
+    );
+  }
+
   for (const installation of syncableInstallations) {
     await upsertInstallation({
+      tenantId,
       userId,
       installationId: installation.id,
       accountLogin: installation.account.login,

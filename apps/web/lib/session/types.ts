@@ -28,4 +28,10 @@ export interface SessionUserInfo {
   hasGitHub?: boolean;
   hasGitHubAccount?: boolean;
   hasGitHubInstallations?: boolean;
+  /**
+   * Active tenant for the session — surfaced to the client so tenant-aware
+   * UIs (e.g. the GitHub App install button) can pass it back when kicking
+   * off tenant-scoped flows.
+   */
+  activeTenantId?: string;
 }

@@ -70,11 +70,17 @@ function GitHubIcon({ className }: { className?: string }) {
   );
 }
 
-function startGitHubInstallForOrg(githubId: number) {
+function startGitHubInstallForOrg(
+  githubId: number,
+  tenantId?: string,
+) {
   const params = new URLSearchParams({
     next: "/settings/connections",
     target_id: String(githubId),
   });
+  if (tenantId) {
+    params.set("tenant_id", tenantId);
+  }
 
   window.location.href = `/api/github/app/install?${params.toString()}`;
 }
@@ -83,10 +89,13 @@ function getCurrentPathWithSearch(): string {
   return `${window.location.pathname}${window.location.search}`;
 }
 
-function startGitHubInstallFromSettings() {
+function startGitHubInstallFromSettings(tenantId?: string) {
   const params = new URLSearchParams({
     next: "/settings/connections",
   });
+  if (tenantId) {
+    params.set("tenant_id", tenantId);
+  }
   window.location.href = `/api/github/app/install?${params.toString()}`;
 }
 
@@ -230,7 +239,13 @@ function InstallBadge({
   );
 }
 
-function OrgRow({ org }: { org: OrgInstallStatus }) {
+function OrgRow({
+  org,
+  tenantId,
+}: {
+  org: OrgInstallStatus;
+  tenantId?: string;
+}) {
   const isInstalled = org.installStatus === "installed";
   const avatarSrc =
     org.avatarUrl ||
@@ -270,7 +285,7 @@ function OrgRow({ org }: { org: OrgInstallStatus }) {
             variant="ghost"
             size="sm"
             className="h-6 px-2 text-[11px]"
-            onClick={() => startGitHubInstallForOrg(org.githubId)}
+            onClick={() => startGitHubInstallForOrg(org.githubId, tenantId)}
           >
             Install
           </Button>
@@ -281,7 +296,12 @@ function OrgRow({ org }: { org: OrgInstallStatus }) {
 }
 
 export function AccountsSection() {
-  const { hasGitHubAccount, hasGitHub, loading } = useSession();
+  const {
+    hasGitHubAccount,
+    hasGitHub,
+    loading,
+    activeTenantId,
+  } = useSession();
   const { mutate } = useSWRConfig();
   const [unlinking, setUnlinking] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -363,7 +383,7 @@ export function AccountsSection() {
 
         <div className="space-y-4 p-4">
           {!hasGitHub ? (
-            <NotConnectedState />
+            <NotConnectedState tenantId={activeTenantId} />
           ) : connectionLoading && !connectionData ? (
             <ConnectionLoadingSkeleton />
           ) : reconnectRequired && !connectionData ? (
@@ -381,9 +401,10 @@ export function AccountsSection() {
               tokenExpired={tokenExpired}
               unlinking={unlinking}
               onUnlink={handleUnlink}
+              tenantId={activeTenantId}
             />
           ) : (
-            <NotConnectedState />
+            <NotConnectedState tenantId={activeTenantId} />
           )}
         </div>
       </div>
@@ -391,7 +412,7 @@ export function AccountsSection() {
   );
 }
 
-function NotConnectedState() {
+function NotConnectedState({ tenantId }: { tenantId?: string }) {
   return (
     <div className="flex items-center justify-between">
       <p className="text-sm text-muted-foreground">
@@ -401,7 +422,7 @@ function NotConnectedState() {
         variant="outline"
         size="sm"
         className="shrink-0"
-        onClick={startGitHubInstallFromSettings}
+        onClick={() => startGitHubInstallFromSettings(tenantId)}
       >
         Connect
       </Button>
@@ -474,6 +495,7 @@ function ConnectedState({
   tokenExpired,
   unlinking,
   onUnlink,
+  tenantId,
 }: {
   data: ConnectionStatusResponse;
   reconnectRequired: boolean;
@@ -481,6 +503,7 @@ function ConnectedState({
   tokenExpired: boolean;
   unlinking: boolean;
   onUnlink: () => void;
+  tenantId?: string;
 }) {
   const [disconnectOpen, setDisconnectOpen] = useState(false);
   const [orgsExpanded, setOrgsExpanded] = useState(false);
@@ -602,7 +625,7 @@ function ConnectedState({
           {orgsExpanded ? (
             <div className="mt-2 space-y-0 divide-y divide-border/30">
               {data.orgs.map((org) => (
-                <OrgRow key={org.login} org={org} />
+                <OrgRow key={org.login} org={org} tenantId={tenantId} />
               ))}
 
               <div className="flex items-center py-1.5">
@@ -610,7 +633,7 @@ function ConnectedState({
                   variant="ghost"
                   size="sm"
                   className="h-6 px-2 text-[11px] text-muted-foreground"
-                  onClick={startGitHubInstallFromSettings}
+                  onClick={() => startGitHubInstallFromSettings(tenantId)}
                 >
                   + Add an organization
                 </Button>

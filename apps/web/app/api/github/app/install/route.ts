@@ -26,6 +26,13 @@ const COOKIE_OPTIONS = {
   sameSite: "lax" as const,
 };
 
+function sanitizeTenantId(value: string | null | undefined): string | null {
+  if (!value) return null;
+  // Tenant ids are nanoid-style identifiers — conservative allow-list guard.
+  if (!/^[A-Za-z0-9_-]{6,64}$/.test(value)) return null;
+  return value;
+}
+
 function shouldForceReconnect(req: NextRequest): boolean {
   return (
     req.nextUrl.searchParams.get("reconnect") === "1" ||
@@ -42,6 +49,7 @@ function redirectWithInstallCookies(
   url: string | URL,
   redirectTo: string,
   state: string,
+  tenantId: string | null = null,
 ): NextResponse {
   const response = NextResponse.redirect(url);
   response.cookies.set(
@@ -50,6 +58,13 @@ function redirectWithInstallCookies(
     COOKIE_OPTIONS,
   );
   response.cookies.set("github_app_install_state", state, COOKIE_OPTIONS);
+  if (tenantId) {
+    response.cookies.set(
+      "github_app_install_tenant_id",
+      tenantId,
+      COOKIE_OPTIONS,
+    );
+  }
   return response;
 }
 
@@ -75,6 +90,13 @@ export async function GET(req: NextRequest): Promise<Response> {
   }
 
   const state = generateState();
+  // When the caller passes a tenant id (tenant-scoped install flow), carry
+  // it through via a signed httpOnly cookie. The callback consumes it to
+  // attribute the new installation to the correct tenant. If absent, the
+  // callback falls back to the user's personal tenant.
+  const tenantIdParam = sanitizeTenantId(
+    req.nextUrl.searchParams.get("tenant_id"),
+  );
 
   // When a specific target_id is provided (numeric GitHub account/org ID),
   // the user already has a linked GitHub account and wants to install the app
@@ -86,7 +108,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     );
     installUrl.searchParams.set("state", state);
     installUrl.searchParams.set("target_id", targetId);
-    return redirectWithInstallCookies(installUrl, redirectTo, state);
+    return redirectWithInstallCookies(installUrl, redirectTo, state, tenantIdParam);
   }
 
   if (shouldForceReconnect(req)) {
@@ -97,14 +119,14 @@ export async function GET(req: NextRequest): Promise<Response> {
       authorizeUrl.searchParams.set("state", state);
       const callbackUrl = new URL("/api/github/app/callback", req.url);
       authorizeUrl.searchParams.set("redirect_uri", callbackUrl.toString());
-      return redirectWithInstallCookies(authorizeUrl, redirectTo, state);
+      return redirectWithInstallCookies(authorizeUrl, redirectTo, state, tenantIdParam);
     }
 
     const selectTargetUrl = new URL(
       `https://github.com/apps/${appSlug}/installations/select_target`,
     );
     selectTargetUrl.searchParams.set("state", state);
-    return redirectWithInstallCookies(selectTargetUrl, redirectTo, state);
+    return redirectWithInstallCookies(selectTargetUrl, redirectTo, state, tenantIdParam);
   }
 
   const ghAccount = await getGitHubAccount(session.user.id);
@@ -138,7 +160,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       );
       installUrl.searchParams.set("state", state);
       installUrl.searchParams.set("target_id", ghAccount.externalUserId);
-      return redirectWithInstallCookies(installUrl, redirectTo, state);
+      return redirectWithInstallCookies(installUrl, redirectTo, state, tenantIdParam);
     }
 
     // Already has installations — show the account/org picker so they can
@@ -147,7 +169,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       `https://github.com/apps/${appSlug}/installations/select_target`,
     );
     installUrl.searchParams.set("state", state);
-    return redirectWithInstallCookies(installUrl, redirectTo, state);
+    return redirectWithInstallCookies(installUrl, redirectTo, state, tenantIdParam);
   }
 
   // No linked GitHub account — use OAuth to link the account first. The
@@ -160,7 +182,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       `https://github.com/apps/${appSlug}/installations/select_target`,
     );
     installUrl.searchParams.set("state", state);
-    return redirectWithInstallCookies(installUrl, redirectTo, state);
+    return redirectWithInstallCookies(installUrl, redirectTo, state, tenantIdParam);
   }
 
   const authorizeUrl = new URL("https://github.com/login/oauth/authorize");
@@ -168,5 +190,5 @@ export async function GET(req: NextRequest): Promise<Response> {
   authorizeUrl.searchParams.set("state", state);
   const callbackUrl = new URL("/api/github/app/callback", req.url);
   authorizeUrl.searchParams.set("redirect_uri", callbackUrl.toString());
-  return redirectWithInstallCookies(authorizeUrl, redirectTo, state);
+  return redirectWithInstallCookies(authorizeUrl, redirectTo, state, tenantIdParam);
 }
