@@ -1,6 +1,6 @@
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "./client";
-import { memberships, tenants } from "./schema";
+import { memberships, tenants, users } from "./schema";
 import type { SessionRole } from "@/lib/session/types";
 
 export type UserMembership = {
@@ -43,6 +43,54 @@ export async function getDefaultMembershipForUser(
 ): Promise<UserMembership | undefined> {
   const rows = await listMembershipsForUser(userId);
   return rows[0];
+}
+
+export type TenantMemberRow = {
+  userId: string;
+  role: SessionRole;
+  createdAt: Date;
+  email: string | null;
+  username: string;
+  name: string | null;
+  avatarUrl: string | null;
+};
+
+export async function listMembershipsForTenant(
+  tenantId: string,
+): Promise<TenantMemberRow[]> {
+  const rows = await db
+    .select({
+      userId: memberships.userId,
+      role: memberships.role,
+      createdAt: memberships.createdAt,
+      email: users.email,
+      username: users.username,
+      name: users.name,
+      avatarUrl: users.avatarUrl,
+    })
+    .from(memberships)
+    .innerJoin(users, eq(users.id, memberships.userId))
+    .where(eq(memberships.tenantId, tenantId))
+    .orderBy(asc(memberships.createdAt));
+  return rows.map((r) => ({
+    userId: r.userId,
+    role: r.role as SessionRole,
+    createdAt: r.createdAt,
+    email: r.email,
+    username: r.username,
+    name: r.name,
+    avatarUrl: r.avatarUrl,
+  }));
+}
+
+export async function countOwners(tenantId: string): Promise<number> {
+  const rows = await db
+    .select({ userId: memberships.userId })
+    .from(memberships)
+    .where(
+      and(eq(memberships.tenantId, tenantId), eq(memberships.role, "owner")),
+    );
+  return rows.length;
 }
 
 export async function getMembership(

@@ -18,6 +18,10 @@ const PUBLIC_API_PREFIXES = [
   "/api/vercel/webhook",
   "/api/sandbox/webhook",
   "/api/shared/",
+  // Invite accept flow: the GET preview is public; the POST accept handler
+  // performs its own session check so it can return a clean 401 rather than
+  // the generic middleware 401. See /api/invite/[token]/route.ts.
+  "/api/invite/",
 ];
 
 function isPublicApi(pathname: string): boolean {
