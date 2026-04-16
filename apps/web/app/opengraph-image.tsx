@@ -5,6 +5,16 @@ export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 export const runtime = "edge";
 
+const appUrlLabel = (() => {
+  const raw = process.env.NEXT_PUBLIC_APP_URL;
+  if (!raw) return "open-agents.dev";
+  try {
+    return new URL(raw).host;
+  } catch {
+    return raw.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  }
+})();
+
 export default function OgImage() {
   return new ImageResponse(
     <div
@@ -170,7 +180,7 @@ export default function OgImage() {
                 letterSpacing: "0.01em",
               }}
             >
-              open-agents.dev
+              {appUrlLabel}
             </span>
           </div>
         </div>
