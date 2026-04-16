@@ -12,13 +12,19 @@
     "db:push": "drizzle-kit push",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
-    "db:check": "bun run scripts/check-migrations.ts"
+    "db:check": "bun run scripts/check-migrations.ts",
+    "rekey:tenant-keys": "bun run scripts/rekey-tenant-api-keys.ts"
   },
   "dependencies": {
     "@ai-sdk/elevenlabs": "^2.0.29",
     "@ai-sdk/react": "catalog:",
     "@octokit/auth-app": "^8.2.0",
     "@octokit/rest": "^22.0.1",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.57.0",
+    "@opentelemetry/resources": "^1.30.0",
+    "@opentelemetry/sdk-node": "^0.57.0",
+    "@opentelemetry/semantic-conventions": "^1.28.0",
     "@open-harness/agent": "workspace:*",
     "@open-harness/sandbox": "workspace:*",
     "@open-harness/shared": "workspace:*",

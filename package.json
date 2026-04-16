@@ -24,6 +24,7 @@
     "fix": "ultracite fix",
     "ci": "bun run check && bun run typecheck && bun run test:isolated && bun run --cwd apps/web db:check",
     "test:isolated": "bun run scripts/test-isolated.ts",
+    "verify:migrations": "bun run scripts/verify-migrations.ts",
     "test:verbose": "bun test --reporter=junit --reporter-outfile /dev/stdout",
     "admin:sandboxes": "bun run scripts/admin-sandboxes.ts"
   },

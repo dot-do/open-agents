@@ -1,5 +1,6 @@
 import "server-only";
 
+import { SpanStatusCode, trace } from "@opentelemetry/api";
 import { nanoid } from "nanoid";
 import { auditEvents } from "@/lib/db/schema";
 import { scopedQuery } from "@/lib/db/tenant-guard";
@@ -98,31 +99,63 @@ export async function withTenantTags<T>(
     user_id: ctx.userId,
     role: ctx.role,
   };
-  try {
-    const result = await fn();
-    // eslint-disable-next-line no-console
-    console.log(
-      JSON.stringify({
-        event: "span.end",
-        span: spanName,
-        durationMs: Date.now() - start,
-        ok: true,
-        ...tags,
-      }),
-    );
-    return result;
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error(
-      JSON.stringify({
-        event: "span.end",
-        span: spanName,
-        durationMs: Date.now() - start,
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-        ...tags,
-      }),
-    );
-    throw error;
-  }
+  // When no SDK has registered a TracerProvider, the global provider is the
+  // noop implementation. In that case we emit the legacy JSON log line so
+  // dev/self-hosted setups without OTLP configured keep the current behavior.
+  // When a real provider is wired up (see `apps/web/instrumentation.ts`) the
+  // span carries the attributes and we skip the log to avoid double-emitting.
+  const providerName = trace.getTracerProvider().constructor.name;
+  const tracingActive =
+    providerName !== "NoopTracerProvider" &&
+    providerName !== "ProxyTracerProvider"
+      ? true
+      : // ProxyTracerProvider forwards to whatever has been registered — if it
+        // still points at the noop delegate, treat tracing as inactive.
+        providerName === "ProxyTracerProvider"
+        ? (trace.getTracerProvider() as { getDelegate?: () => unknown })
+            .getDelegate?.()?.constructor.name !== "NoopTracerProvider"
+        : false;
+
+  const tracer = trace.getTracer("open-agents");
+  return tracer.startActiveSpan(spanName, async (span) => {
+    span.setAttribute("tenant.id", ctx.tenantId);
+    if (ctx.userId) span.setAttribute("user.id", ctx.userId);
+    if (ctx.role) span.setAttribute("tenant.role", ctx.role);
+    try {
+      const result = await fn();
+      if (!tracingActive) {
+        // eslint-disable-next-line no-console
+        console.log(
+          JSON.stringify({
+            event: "span.end",
+            span: spanName,
+            durationMs: Date.now() - start,
+            ok: true,
+            ...tags,
+          }),
+        );
+      }
+      return result;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      span.recordException(err);
+      span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
+      if (!tracingActive) {
+        // eslint-disable-next-line no-console
+        console.error(
+          JSON.stringify({
+            event: "span.end",
+            span: spanName,
+            durationMs: Date.now() - start,
+            ok: false,
+            error: err.message,
+            ...tags,
+          }),
+        );
+      }
+      throw error;
+    } finally {
+      span.end();
+    }
+  });
 }

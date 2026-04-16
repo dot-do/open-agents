@@ -79,6 +79,35 @@ bun run --cwd apps/web db:check   # verifies generated SQL matches schema
 `bun run build` (used on Vercel) also runs `db:migrate:apply` as a prebuild
 step, so deploys self-heal. For local dev, run migrations explicitly.
 
+### Verifying migrations
+
+`scripts/verify-migrations.ts` applies every committed Drizzle migration
+(currently 35, including the tenancy backfill `0030`, RLS policies `0034`,
+and SSO configs `0035`) to a *fresh* database and then runs the drift
+check. CI runs this on every PR against a `postgres:16` service
+container; the `migrate-verify` job in `.github/workflows/ci.yml` is the
+canonical invocation.
+
+To run it locally, point `POSTGRES_URL` at an empty database and invoke
+the root script:
+
+```sh
+# Example: start a throwaway Postgres in Docker
+docker run --rm -d --name oa-verify \
+  -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=verify -p 5432:5432 postgres:16
+
+POSTGRES_URL=postgres://postgres:postgres@localhost:5432/verify \
+  bun run verify:migrations
+
+docker rm -f oa-verify
+```
+
+The script refuses to run if `public.*` already contains user tables, so
+it will not stomp on an existing dev database. After migrating it
+sanity-checks that `tenants` and `memberships` exist with zero rows and
+that at least 35 migrations are recorded in `drizzle.__drizzle_migrations`.
+
 ## 5. First tenant
 
 With multitenant enabled, a tenant is created on first sign-in. The first
