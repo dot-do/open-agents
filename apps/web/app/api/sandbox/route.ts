@@ -40,6 +40,7 @@ import {
 } from "@/lib/quotas";
 import { getPlan, PLAN_MATRIX } from "@/lib/billing";
 import { audit, withTenantTags } from "@/lib/audit";
+import { safeEnqueueEvent } from "@/lib/webhooks";
 // import { buildDevelopmentDotenvFromVercelProject } from "@/lib/vercel/projects";
 // import { getUserVercelToken } from "@/lib/vercel/token";
 
@@ -286,6 +287,12 @@ export async function POST(req: Request) {
       target: sessionId,
       metadata: { repoUrl: repoUrl ?? null, branch: repoUrl ? branch : null },
     });
+    // Fan out to tenant webhook subscribers — never break the spawn flow.
+    void safeEnqueueEvent(tenantCtx.tenantId, "session.created", {
+      sessionId,
+      repoUrl: repoUrl ?? null,
+      branch: repoUrl ? branch : null,
+    });
   }
 
   if (sessionId && sandbox.getState) {
@@ -429,6 +436,10 @@ export async function DELETE(req: Request) {
     await audit(killCtx, "session.killed", {
       target: sessionId,
       metadata: { reason: "user_requested" },
+    });
+    void safeEnqueueEvent(killCtx.tenantId, "session.killed", {
+      sessionId,
+      reason: "user_requested",
     });
   }
 
