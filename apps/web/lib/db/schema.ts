@@ -13,6 +13,27 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
+// Tenancy note: all mutating queries in app/api that touch tenant-scoped
+// tables MUST go through `withTenant` / `requireTenantCtx` from
+// `apps/web/lib/db/tenant-context.ts`. Adding new tenant-scoped tables?
+// Add a `tenantId` column + composite index and route writes through the
+// tenant guard helpers.
+
+export const tenants = pgTable(
+  "tenants",
+  {
+    id: text("id").primaryKey(),
+    slug: text("slug").notNull().unique(),
+    name: text("name").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("tenants_slug_idx").on(table.slug)],
+);
+
+export type Tenant = typeof tenants.$inferSelect;
+export type NewTenant = typeof tenants.$inferInsert;
+
 export const users = pgTable(
   "users",
   {
@@ -40,6 +61,29 @@ export const users = pgTable(
     ),
   ],
 );
+
+export const memberships = pgTable(
+  "memberships",
+  {
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: text("role", {
+      enum: ["owner", "admin", "member", "viewer"],
+    }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.tenantId, table.userId] }),
+    index("memberships_user_id_idx").on(table.userId),
+  ],
+);
+
+export type Membership = typeof memberships.$inferSelect;
+export type NewMembership = typeof memberships.$inferInsert;
 
 export const accounts = pgTable(
   "accounts",
@@ -77,6 +121,7 @@ export const githubInstallations = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    tenantId: text("tenant_id").references(() => tenants.id),
     installationId: integer("installation_id").notNull(),
     accountLogin: text("account_login").notNull(),
     accountType: text("account_type", {
@@ -98,6 +143,10 @@ export const githubInstallations = pgTable(
       table.userId,
       table.accountLogin,
     ),
+    index("github_installations_tenant_user_idx").on(
+      table.tenantId,
+      table.userId,
+    ),
   ],
 );
 
@@ -107,6 +156,7 @@ export const vercelProjectLinks = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    tenantId: text("tenant_id").references(() => tenants.id),
     repoOwner: text("repo_owner").notNull(),
     repoName: text("repo_name").notNull(),
     projectId: text("project_id").notNull(),
@@ -120,6 +170,10 @@ export const vercelProjectLinks = pgTable(
     primaryKey({
       columns: [table.userId, table.repoOwner, table.repoName],
     }),
+    index("vercel_project_links_tenant_user_idx").on(
+      table.tenantId,
+      table.userId,
+    ),
   ],
 );
 
@@ -130,6 +184,7 @@ export const sessions = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    tenantId: text("tenant_id").references(() => tenants.id),
     title: text("title").notNull(),
     status: text("status", {
       enum: ["running", "completed", "failed", "archived"],
@@ -196,7 +251,10 @@ export const sessions = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
-  (table) => [index("sessions_user_id_idx").on(table.userId)],
+  (table) => [
+    index("sessions_user_id_idx").on(table.userId),
+    index("sessions_tenant_user_idx").on(table.tenantId, table.userId),
+  ],
 );
 
 export const chats = pgTable(
@@ -206,6 +264,7 @@ export const chats = pgTable(
     sessionId: text("session_id")
       .notNull()
       .references(() => sessions.id, { onDelete: "cascade" }),
+    tenantId: text("tenant_id").references(() => tenants.id),
     title: text("title").notNull(),
     modelId: text("model_id").default("anthropic/claude-haiku-4.5"),
     activeStreamId: text("active_stream_id"),
@@ -213,7 +272,10 @@ export const chats = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
-  (table) => [index("chats_session_id_idx").on(table.sessionId)],
+  (table) => [
+    index("chats_session_id_idx").on(table.sessionId),
+    index("chats_tenant_session_idx").on(table.tenantId, table.sessionId),
+  ],
 );
 
 export const shares = pgTable(
@@ -223,24 +285,35 @@ export const shares = pgTable(
     chatId: text("chat_id")
       .notNull()
       .references(() => chats.id, { onDelete: "cascade" }),
+    tenantId: text("tenant_id").references(() => tenants.id),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
-  (table) => [uniqueIndex("shares_chat_id_idx").on(table.chatId)],
+  (table) => [
+    uniqueIndex("shares_chat_id_idx").on(table.chatId),
+    index("shares_tenant_chat_idx").on(table.tenantId, table.chatId),
+  ],
 );
 
-export const chatMessages = pgTable("chat_messages", {
-  id: text("id").primaryKey(),
-  chatId: text("chat_id")
-    .notNull()
-    .references(() => chats.id, { onDelete: "cascade" }),
-  role: text("role", {
-    enum: ["user", "assistant"],
-  }).notNull(),
-  // Store the full message parts as JSON for flexibility
-  parts: jsonb("parts").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+export const chatMessages = pgTable(
+  "chat_messages",
+  {
+    id: text("id").primaryKey(),
+    chatId: text("chat_id")
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    tenantId: text("tenant_id").references(() => tenants.id),
+    role: text("role", {
+      enum: ["user", "assistant"],
+    }).notNull(),
+    // Store the full message parts as JSON for flexibility
+    parts: jsonb("parts").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("chat_messages_tenant_chat_idx").on(table.tenantId, table.chatId),
+  ],
+);
 
 export const chatReads = pgTable(
   "chat_reads",
@@ -274,6 +347,7 @@ export const workflowRuns = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    tenantId: text("tenant_id").references(() => tenants.id),
     modelId: text("model_id"),
     status: text("status", {
       enum: ["completed", "aborted", "failed"],
@@ -287,6 +361,7 @@ export const workflowRuns = pgTable(
     index("workflow_runs_chat_id_idx").on(table.chatId),
     index("workflow_runs_session_id_idx").on(table.sessionId),
     index("workflow_runs_user_id_idx").on(table.userId),
+    index("workflow_runs_tenant_user_idx").on(table.tenantId, table.userId),
   ],
 );
 
@@ -297,6 +372,7 @@ export const workflowRunSteps = pgTable(
     workflowRunId: text("workflow_run_id")
       .notNull()
       .references(() => workflowRuns.id, { onDelete: "cascade" }),
+    tenantId: text("tenant_id").references(() => tenants.id),
     stepNumber: integer("step_number").notNull(),
     startedAt: timestamp("started_at").notNull(),
     finishedAt: timestamp("finished_at").notNull(),
@@ -310,6 +386,10 @@ export const workflowRunSteps = pgTable(
     uniqueIndex("workflow_run_steps_run_step_idx").on(
       table.workflowRunId,
       table.stepNumber,
+    ),
+    index("workflow_run_steps_tenant_run_idx").on(
+      table.tenantId,
+      table.workflowRunId,
     ),
   ],
 );
@@ -341,6 +421,7 @@ export const linkedAccounts = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    tenantId: text("tenant_id").references(() => tenants.id),
     provider: text("provider", {
       enum: ["slack", "discord", "whatsapp", "telegram"],
     }).notNull(),
@@ -356,6 +437,7 @@ export const linkedAccounts = pgTable(
       table.externalId,
       table.workspaceId,
     ),
+    index("linked_accounts_tenant_user_idx").on(table.tenantId, table.userId),
   ],
 );
 
@@ -363,66 +445,82 @@ export type LinkedAccount = typeof linkedAccounts.$inferSelect;
 export type NewLinkedAccount = typeof linkedAccounts.$inferInsert;
 
 // User preferences for settings
-export const userPreferences = pgTable("user_preferences", {
-  id: text("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .unique()
-    .references(() => users.id, { onDelete: "cascade" }),
-  defaultModelId: text("default_model_id").default(
-    "anthropic/claude-haiku-4.5",
-  ),
-  defaultSubagentModelId: text("default_subagent_model_id"),
-  defaultSandboxType: text("default_sandbox_type", {
-    enum: ["vercel"],
-  }).default("vercel"),
-  defaultDiffMode: text("default_diff_mode", {
-    enum: ["unified", "split"],
-  }).default("unified"),
-  autoCommitPush: boolean("auto_commit_push").notNull().default(false),
-  autoCreatePr: boolean("auto_create_pr").notNull().default(false),
-  alertsEnabled: boolean("alerts_enabled").notNull().default(true),
-  alertSoundEnabled: boolean("alert_sound_enabled").notNull().default(true),
-  publicUsageEnabled: boolean("public_usage_enabled").notNull().default(false),
-  globalSkillRefs: jsonb("global_skill_refs")
-    .$type<GlobalSkillRef[]>()
-    .notNull()
-    .default([]),
-  modelVariants: jsonb("model_variants")
-    .$type<ModelVariant[]>()
-    .notNull()
-    .default([]),
-  enabledModelIds: jsonb("enabled_model_ids")
-    .$type<string[]>()
-    .notNull()
-    .default([]),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+export const userPreferences = pgTable(
+  "user_preferences",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .unique()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tenantId: text("tenant_id").references(() => tenants.id),
+    defaultModelId: text("default_model_id").default(
+      "anthropic/claude-haiku-4.5",
+    ),
+    defaultSubagentModelId: text("default_subagent_model_id"),
+    defaultSandboxType: text("default_sandbox_type", {
+      enum: ["vercel"],
+    }).default("vercel"),
+    defaultDiffMode: text("default_diff_mode", {
+      enum: ["unified", "split"],
+    }).default("unified"),
+    autoCommitPush: boolean("auto_commit_push").notNull().default(false),
+    autoCreatePr: boolean("auto_create_pr").notNull().default(false),
+    alertsEnabled: boolean("alerts_enabled").notNull().default(true),
+    alertSoundEnabled: boolean("alert_sound_enabled").notNull().default(true),
+    publicUsageEnabled: boolean("public_usage_enabled")
+      .notNull()
+      .default(false),
+    globalSkillRefs: jsonb("global_skill_refs")
+      .$type<GlobalSkillRef[]>()
+      .notNull()
+      .default([]),
+    modelVariants: jsonb("model_variants")
+      .$type<ModelVariant[]>()
+      .notNull()
+      .default([]),
+    enabledModelIds: jsonb("enabled_model_ids")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("user_preferences_tenant_user_idx").on(table.tenantId, table.userId),
+  ],
+);
 
 export type UserPreferences = typeof userPreferences.$inferSelect;
 export type NewUserPreferences = typeof userPreferences.$inferInsert;
 
 // Usage tracking — one row per assistant turn (append-only)
-export const usageEvents = pgTable("usage_events", {
-  id: text("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  source: text("source", { enum: ["web"] })
-    .notNull()
-    .default("web"),
-  agentType: text("agent_type", { enum: ["main", "subagent"] })
-    .notNull()
-    .default("main"),
-  provider: text("provider"),
-  modelId: text("model_id"),
-  inputTokens: integer("input_tokens").notNull().default(0),
-  cachedInputTokens: integer("cached_input_tokens").notNull().default(0),
-  outputTokens: integer("output_tokens").notNull().default(0),
-  toolCallCount: integer("tool_call_count").notNull().default(0),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+export const usageEvents = pgTable(
+  "usage_events",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tenantId: text("tenant_id").references(() => tenants.id),
+    source: text("source", { enum: ["web"] })
+      .notNull()
+      .default("web"),
+    agentType: text("agent_type", { enum: ["main", "subagent"] })
+      .notNull()
+      .default("main"),
+    provider: text("provider"),
+    modelId: text("model_id"),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    cachedInputTokens: integer("cached_input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    toolCallCount: integer("tool_call_count").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("usage_events_tenant_user_idx").on(table.tenantId, table.userId),
+  ],
+);
 
 export type UsageEvent = typeof usageEvents.$inferSelect;
 export type NewUsageEvent = typeof usageEvents.$inferInsert;

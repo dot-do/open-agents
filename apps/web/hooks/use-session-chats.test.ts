@@ -15,6 +15,7 @@ function createChat(
   return {
     id,
     sessionId: "session-1",
+    tenantId: null,
     title: `Chat ${id}`,
     modelId: "anthropic/claude-haiku-4.5",
     activeStreamId: null,

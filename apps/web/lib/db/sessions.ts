@@ -373,6 +373,7 @@ export async function getChatSummariesBySessionId(
     .select({
       id: chats.id,
       sessionId: chats.sessionId,
+      tenantId: chats.tenantId,
       title: chats.title,
       modelId: chats.modelId,
       activeStreamId: chats.activeStreamId,

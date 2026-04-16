@@ -495,6 +495,7 @@ export function useSessionChats(
     const optimisticChat: Chat = {
       id: crypto.randomUUID(),
       sessionId,
+      tenantId: null,
       title: "New chat",
       modelId: data?.defaultModelId ?? null,
       activeStreamId: null,
@@ -587,6 +588,7 @@ export function useSessionChats(
     const optimisticChat: Chat = {
       id: crypto.randomUUID(),
       sessionId,
+      tenantId: sourceChat.tenantId ?? null,
       title: `Fork of ${sourceChat.title}`,
       modelId: sourceChat.modelId,
       activeStreamId: null,
