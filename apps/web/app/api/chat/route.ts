@@ -217,6 +217,47 @@ export async function POST(req: Request) {
     shouldAutoCommitPush &&
     (sessionRecord.autoCreatePrOverride ?? preferences?.autoCreatePr ?? false);
 
+  // Pre-flight per-provider daily spend cap (Wave 6 / open-agents-lcc).
+  // Block the request before the streaming workflow starts when the
+  // tenant's per-provider cap is already exhausted. We surface this as
+  // HTTP 402 with a structured `provider_spend_cap_reached` error so
+  // the chat client can render a clear message rather than a 5xx.
+  if (sessionRecord.tenantId) {
+    try {
+      const { providerForModel } = await import("@/lib/provider-pricing");
+      const { assertProviderSpendUnderCap } = await import(
+        "@/lib/quotas/provider-spend"
+      );
+      const provider = providerForModel(mainModelSelection.id);
+      if (provider) {
+        await assertProviderSpendUnderCap(sessionRecord.tenantId, provider);
+      }
+    } catch (error) {
+      const { QuotaExceededError } = await import("@/lib/quotas");
+      if (error instanceof QuotaExceededError) {
+        const provider =
+          (await import("@/lib/provider-pricing")).providerForModel(
+            mainModelSelection.id,
+          ) ?? "unknown";
+        return Response.json(
+          {
+            error: "provider_spend_cap_reached",
+            provider,
+            limit: error.limit,
+            current: error.current,
+          },
+          { status: 402 },
+        );
+      }
+      // Non-quota errors here are best-effort: log and continue rather
+      // than blocking the chat path on a Redis hiccup.
+      console.warn(
+        "[quotas] provider spend pre-flight failed:",
+        error,
+      );
+    }
+  }
+
   // Start the durable workflow
   const run = await start(runAgentWorkflow, [
     {
