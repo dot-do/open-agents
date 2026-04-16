@@ -1,9 +1,10 @@
 import { cookies } from "next/headers";
 import { type NextRequest } from "next/server";
 import { encrypt } from "@/lib/crypto";
+import { getDefaultMembershipForUser } from "@/lib/db/memberships";
 import { upsertUser } from "@/lib/db/users";
-import { encryptJWE } from "@/lib/jwe/encrypt";
-import { SESSION_COOKIE_NAME } from "@/lib/session/constants";
+import { buildSessionSetCookie } from "@/lib/session/cookie";
+import type { Session } from "@/lib/session/types";
 import { exchangeVercelCode, getVercelUserInfo } from "@/lib/vercel/oauth";
 
 function clearVercelOauthCookies(store: Awaited<ReturnType<typeof cookies>>) {
@@ -71,7 +72,9 @@ export async function GET(req: NextRequest): Promise<Response> {
       tokenExpiresAt,
     });
 
-    const session = {
+    const defaultMembership = await getDefaultMembershipForUser(userId);
+
+    const session: Session = {
       created: Date.now(),
       authProvider: "vercel" as const,
       user: {
@@ -81,12 +84,9 @@ export async function GET(req: NextRequest): Promise<Response> {
         name: userInfo.name ?? username,
         avatar: userInfo.picture ?? "",
       },
+      activeTenantId: defaultMembership?.tenantId,
+      role: defaultMembership?.role,
     };
-
-    const sessionToken = await encryptJWE(session, "1y");
-    const expires = new Date(
-      Date.now() + 365 * 24 * 60 * 60 * 1000,
-    ).toUTCString();
 
     const response = new Response(null, {
       status: 302,
@@ -95,10 +95,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       },
     });
 
-    response.headers.append(
-      "Set-Cookie",
-      `${SESSION_COOKIE_NAME}=${sessionToken}; Path=/; Max-Age=${365 * 24 * 60 * 60}; Expires=${expires}; HttpOnly; ${process.env.NODE_ENV === "production" ? "Secure; " : ""}SameSite=Lax`,
-    );
+    response.headers.append("Set-Cookie", await buildSessionSetCookie(session));
 
     clearVercelOauthCookies(cookieStore);
 

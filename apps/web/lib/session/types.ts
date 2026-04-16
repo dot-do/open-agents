@@ -1,3 +1,5 @@
+export type SessionRole = "owner" | "admin" | "member" | "viewer";
+
 export interface Session {
   created: number;
   authProvider: "vercel" | "github";
@@ -8,6 +10,16 @@ export interface Session {
     avatar: string;
     name?: string;
   };
+  /**
+   * Tenant the user is currently acting as. Added in the tenant-context wave.
+   * May be undefined on sessions issued before that wave — downstream code
+   * (see `requireTenantCtx`) must fall back to the user's first membership.
+   */
+  activeTenantId?: string;
+  /**
+   * Role on `activeTenantId`. Same back-compat note as above.
+   */
+  role?: SessionRole;
 }
 
 export interface SessionUserInfo {

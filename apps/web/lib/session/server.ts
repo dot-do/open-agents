@@ -13,6 +13,8 @@ export async function getSessionFromCookie(
         created: decrypted.created,
         authProvider: decrypted.authProvider,
         user: decrypted.user,
+        activeTenantId: decrypted.activeTenantId,
+        role: decrypted.role,
       };
     }
   }

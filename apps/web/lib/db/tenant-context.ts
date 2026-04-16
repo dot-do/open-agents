@@ -37,10 +37,12 @@ export class TenantAccessError extends Error {
 /**
  * Resolve the active tenant for an incoming request.
  *
- * TODO(tenancy): once the session payload carries an `activeTenantId` we
- * should honor it here. Until then we fall back to the user's personal
- * tenant (the first membership row, which for now is their owner seat
- * created by the 0030_tenancy_backfill migration).
+ * Prefers `session.activeTenantId` (set on login and by the tenant switcher).
+ * For sessions issued before that field was added, falls back to the first
+ * membership row — the user's personal tenant per 0030_tenancy_backfill.
+ *
+ * Even when the session carries an `activeTenantId`, we re-verify the
+ * membership against the DB so a membership revoked mid-session is honored.
  */
 export async function requireTenantCtx(
   req: NextRequest,
@@ -51,8 +53,30 @@ export async function requireTenantCtx(
     throw new TenantAccessError("No authenticated user on request");
   }
 
-  // TODO(tenancy): read `session.activeTenantId` once the session type is
-  // extended; for now pick the first membership (personal tenant).
+  const activeTenantId = session?.activeTenantId;
+  if (activeTenantId) {
+    const rows = await db
+      .select({ role: memberships.role })
+      .from(memberships)
+      .where(
+        and(
+          eq(memberships.userId, userId),
+          eq(memberships.tenantId, activeTenantId),
+        ),
+      )
+      .limit(1);
+    const row = rows[0];
+    if (row) {
+      return {
+        tenantId: activeTenantId,
+        userId,
+        role: row.role as Role,
+      };
+    }
+    // Session points at a tenant the user no longer belongs to — fall through
+    // to the first-membership fallback rather than 403'ing on a stale cookie.
+  }
+
   const rows = await db
     .select({
       tenantId: memberships.tenantId,
@@ -60,6 +84,7 @@ export async function requireTenantCtx(
     })
     .from(memberships)
     .where(eq(memberships.userId, userId))
+    .orderBy(memberships.createdAt)
     .limit(1);
 
   const row = rows[0];
