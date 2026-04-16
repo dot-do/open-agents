@@ -20,6 +20,14 @@ export interface Session {
    * Role on `activeTenantId`. Same back-compat note as above.
    */
   role?: SessionRole;
+  /**
+   * When set, the session is impersonating another tenant on behalf of
+   * the cross-tenant admin whose user id is recorded here. Only the
+   * `/api/admin/tenants/[id]/impersonate` route sets this field; the UI
+   * surfaces a banner so the operator never forgets they are not in
+   * their own session. Cleared by `/api/admin/stop-impersonating`.
+   */
+  impersonatedBy?: string;
 }
 
 export interface SessionUserInfo {
@@ -34,4 +42,9 @@ export interface SessionUserInfo {
    * off tenant-scoped flows.
    */
   activeTenantId?: string;
+  /**
+   * Set when an admin is impersonating this tenant. The UI uses this to
+   * render the "you are impersonating" banner and the Stop button.
+   */
+  impersonatedBy?: string;
 }

@@ -43,6 +43,7 @@ export async function GET(req: NextRequest) {
     hasGitHubAccount,
     hasGitHubInstallations,
     activeTenantId: session.activeTenantId,
+    impersonatedBy: session.impersonatedBy,
   };
 
   return Response.json(data);

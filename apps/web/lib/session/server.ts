@@ -15,6 +15,7 @@ export async function getSessionFromCookie(
         user: decrypted.user,
         activeTenantId: decrypted.activeTenantId,
         role: decrypted.role,
+        impersonatedBy: decrypted.impersonatedBy,
       };
     }
   }
