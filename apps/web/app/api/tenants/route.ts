@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { listMembershipsForUser } from "@/lib/db/memberships";
+import { withRateLimit } from "@/lib/rate-limit";
 import { getSessionFromReq } from "@/lib/session/server";
 import { createTenant } from "@/lib/tenants";
 
@@ -16,7 +17,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   });
 }
 
-export async function POST(req: NextRequest): Promise<Response> {
+async function postHandler(req: NextRequest): Promise<Response> {
   const session = await getSessionFromReq(req);
   const userId = session?.user?.id;
   if (!userId) {
@@ -69,3 +70,5 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 }
+
+export const POST = withRateLimit(postHandler, { category: "tenants:write" });

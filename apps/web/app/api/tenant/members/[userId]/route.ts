@@ -4,6 +4,7 @@ import { db } from "@/lib/db/client";
 import { countOwners } from "@/lib/db/memberships";
 import { memberships } from "@/lib/db/schema";
 import { requireTenantCtx, TenantAccessError } from "@/lib/db/tenant-context";
+import { withRateLimit } from "@/lib/rate-limit";
 import { RbacError, requireRole } from "@/lib/rbac";
 
 async function safeAudit(
@@ -21,7 +22,7 @@ async function safeAudit(
   }
 }
 
-export async function DELETE(
+async function deleteHandler(
   req: NextRequest,
   { params }: { params: Promise<{ userId: string }> },
 ): Promise<Response> {
@@ -87,3 +88,7 @@ export async function DELETE(
     throw err;
   }
 }
+
+export const DELETE = withRateLimit(deleteHandler, {
+  category: "members:write",
+});

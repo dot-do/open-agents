@@ -251,6 +251,27 @@ export async function recordWorkflowUsage(
     const { collectTaskToolUsageEvents, sumLanguageModelUsage } =
       await import("@open-harness/agent");
 
+    // Resolve the session's tenantId once and reuse it for both the
+    // workflow-runs insert (so reads can scope by tenantId) and the
+    // billing meter emission below. Best-effort: a missing session row
+    // leaves both downstream paths unscoped rather than failing the step.
+    let workflowTenantId: string | null = null;
+    if (workflowRun?.sessionId) {
+      try {
+        const { db } = await import("@/lib/db/client");
+        const { sessions } = await import("@/lib/db/schema");
+        const { eq } = await import("drizzle-orm");
+        const [row] = await db
+          .select({ tenantId: sessions.tenantId })
+          .from(sessions)
+          .where(eq(sessions.id, workflowRun.sessionId))
+          .limit(1);
+        workflowTenantId = row?.tenantId ?? null;
+      } catch (error) {
+        console.warn("[workflow] failed to resolve session tenantId:", error);
+      }
+    }
+
     if (workflowRun) {
       try {
         await recordWorkflowRun({
@@ -258,6 +279,7 @@ export async function recordWorkflowUsage(
           chatId: workflowRun.chatId,
           sessionId: workflowRun.sessionId,
           userId,
+          tenantId: workflowTenantId,
           modelId,
           status: workflowRun.status,
           startedAt: workflowRun.startedAt,
@@ -288,15 +310,7 @@ export async function recordWorkflowUsage(
       // billing outage can't take down the workflow step.
       if (workflowRun?.sessionId) {
         try {
-          const { db } = await import("@/lib/db/client");
-          const { sessions } = await import("@/lib/db/schema");
-          const { eq } = await import("drizzle-orm");
-          const [row] = await db
-            .select({ tenantId: sessions.tenantId })
-            .from(sessions)
-            .where(eq(sessions.id, workflowRun.sessionId))
-            .limit(1);
-          const tenantId = row?.tenantId;
+          const tenantId = workflowTenantId;
           if (tenantId) {
             const { recordStripeUsageAsync } = await import("@/lib/billing");
             const tokensIn = totalUsage.inputTokens ?? 0;
@@ -310,6 +324,54 @@ export async function recordWorkflowUsage(
           }
         } catch (error) {
           console.warn("[billing] failed to emit token meter event:", error);
+        }
+      }
+
+      // Per-provider daily spend cap (Wave 6 / open-agents-lcc). Estimate
+      // the call's cost from token counts × per-model pricing, attribute
+      // to the inferred provider, and bump the Redis-backed daily counter.
+      // Enforcement is post-hoc here; once a cap is exceeded the next
+      // pre-flight check (or the quota sweep) blocks further calls.
+      if (workflowTenantId) {
+        try {
+          const { estimateCostCents } = await import(
+            "@/lib/provider-pricing"
+          );
+          const { recordProviderSpend, assertProviderSpendUnderCap } =
+            await import("@/lib/quotas/provider-spend");
+          const { provider, costCents } = estimateCostCents(modelId, {
+            inputTokens: totalUsage.inputTokens ?? 0,
+            cachedInputTokens: cachedInputTokensFor(totalUsage),
+            outputTokens: totalUsage.outputTokens ?? 0,
+          });
+          if (provider && costCents > 0) {
+            await recordProviderSpend(workflowTenantId, provider, costCents);
+            // Post-hoc cap check: log a structured event when this call
+            // pushed the tenant over the cap so the next pre-flight (or
+            // the quota sweep) hard-stops them. We do NOT throw here —
+            // the assistant message has already been sent to the client.
+            try {
+              await assertProviderSpendUnderCap(workflowTenantId, provider);
+            } catch (capError) {
+              console.warn(
+                JSON.stringify({
+                  event: "tenant.provider.cap_exceeded",
+                  tenantId: workflowTenantId,
+                  provider,
+                  modelId,
+                  message:
+                    capError instanceof Error
+                      ? capError.message
+                      : String(capError),
+                }),
+              );
+            }
+          }
+        } catch (error) {
+          console.warn(
+            "[quotas] failed to record provider spend:",
+            error,
+          );
         }
       }
     }
@@ -368,6 +430,37 @@ export async function recordWorkflowUsage(
           },
           toolCallCount: modelUsage.toolCallCount,
         });
+
+        // Bump per-provider daily spend counter for the subagent's
+        // model. Mirrors the main-agent path above so cap enforcement
+        // accounts for both the orchestrator and any spawned tasks.
+        if (workflowTenantId) {
+          try {
+            const { estimateCostCents } = await import(
+              "@/lib/provider-pricing"
+            );
+            const { recordProviderSpend } = await import(
+              "@/lib/quotas/provider-spend"
+            );
+            const { provider, costCents } = estimateCostCents(eventModelId, {
+              inputTokens: modelUsage.usage.inputTokens ?? 0,
+              cachedInputTokens: cachedInputTokensFor(modelUsage.usage),
+              outputTokens: modelUsage.usage.outputTokens ?? 0,
+            });
+            if (provider && costCents > 0) {
+              await recordProviderSpend(
+                workflowTenantId,
+                provider,
+                costCents,
+              );
+            }
+          } catch (error) {
+            console.warn(
+              "[quotas] failed to record subagent provider spend:",
+              error,
+            );
+          }
+        }
       }
     }
   } catch (error) {

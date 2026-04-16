@@ -4,12 +4,13 @@ import {
   TenantAccessError,
 } from "@/lib/db/tenant-context";
 import { revokeKey } from "@/lib/db/tenant-api-keys";
+import { withRateLimit } from "@/lib/rate-limit";
 
 function canMutate(role: string): boolean {
   return role === "owner" || role === "admin";
 }
 
-export async function DELETE(
+async function deleteHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -32,3 +33,5 @@ export async function DELETE(
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
+
+export const DELETE = withRateLimit(deleteHandler, { category: "keys:write" });

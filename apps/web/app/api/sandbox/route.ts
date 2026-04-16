@@ -1,6 +1,8 @@
+import type { NextRequest } from "next/server";
 import { checkBotId } from "botid/server";
 import { botIdConfig } from "@/lib/botid";
 import { connectSandbox, type SandboxState } from "@open-harness/sandbox";
+import { withRateLimit } from "@/lib/rate-limit";
 import {
   requireAuthenticatedUser,
   requireOwnedSession,
@@ -113,7 +115,7 @@ async function installSessionGlobalSkills(params: {
   });
 }
 
-export async function POST(req: Request) {
+async function postHandler(req: Request) {
   let body: CreateSandboxRequest;
   try {
     body = (await req.json()) as CreateSandboxRequest;
@@ -365,7 +367,7 @@ export async function POST(req: Request) {
   });
 }
 
-export async function DELETE(req: Request) {
+async function deleteHandler(req: Request) {
   const authResult = await requireAuthenticatedUser();
   if (!authResult.ok) {
     return authResult.response;
@@ -445,3 +447,13 @@ export async function DELETE(req: Request) {
 
   return Response.json({ success: true });
 }
+
+export const POST = withRateLimit(
+  postHandler as (req: NextRequest) => Promise<Response>,
+  { category: "sandbox:write" },
+) as (req: Request) => Promise<Response>;
+
+export const DELETE = withRateLimit(
+  deleteHandler as (req: NextRequest) => Promise<Response>,
+  { category: "sandbox:write" },
+) as (req: Request) => Promise<Response>;

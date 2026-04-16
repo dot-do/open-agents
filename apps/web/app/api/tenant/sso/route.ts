@@ -4,6 +4,7 @@ import { assertPlanAllows, PlanUpgradeRequired } from "@/lib/billing";
 import { db } from "@/lib/db/client";
 import { tenantSsoConfigs } from "@/lib/db/schema";
 import { requireTenantCtx, TenantAccessError } from "@/lib/db/tenant-context";
+import { withRateLimit } from "@/lib/rate-limit";
 import { RbacError, requireRole } from "@/lib/rbac";
 import type { SsoProvider } from "@/lib/sso";
 
@@ -44,7 +45,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   }
 }
 
-export async function PUT(req: NextRequest): Promise<Response> {
+async function putHandler(req: NextRequest): Promise<Response> {
   try {
     const ctx = await requireTenantCtx(req);
     requireRole(ctx, "admin");
@@ -111,6 +112,8 @@ export async function PUT(req: NextRequest): Promise<Response> {
     return mapError(err);
   }
 }
+
+export const PUT = withRateLimit(putHandler, { category: "sso:write" });
 
 function mapError(err: unknown): Response {
   if (err instanceof RbacError) {

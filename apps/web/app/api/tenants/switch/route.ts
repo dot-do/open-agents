@@ -1,11 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { audit, withTenantTags } from "@/lib/audit";
 import { getMembership } from "@/lib/db/memberships";
+import { withRateLimit } from "@/lib/rate-limit";
 import { buildSessionSetCookie } from "@/lib/session/cookie";
 import { getSessionFromReq } from "@/lib/session/server";
 import type { Session } from "@/lib/session/types";
 
-export async function POST(req: NextRequest): Promise<Response> {
+async function postHandler(req: NextRequest): Promise<Response> {
   const session = await getSessionFromReq(req);
   const userId = session?.user?.id;
   if (!session || !userId) {
@@ -58,3 +59,5 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   return response;
 }
+
+export const POST = withRateLimit(postHandler, { category: "tenants:write" });

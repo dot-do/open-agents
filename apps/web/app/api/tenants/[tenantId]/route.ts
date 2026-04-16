@@ -25,6 +25,7 @@ import {
 } from "@/lib/db/schema";
 import { requireTenantCtx, TenantAccessError } from "@/lib/db/tenant-context";
 import { killTenantSandboxes } from "@/lib/quotas";
+import { withRateLimit } from "@/lib/rate-limit";
 import { RbacError, requireRole } from "@/lib/rbac";
 import { getStripe, isStripeConfigured } from "@/lib/stripe";
 import { sql } from "drizzle-orm";
@@ -43,7 +44,7 @@ import { sql } from "drizzle-orm";
  * the tenant revokes everyone's access to the workspace, which is the
  * desired outcome. UI documents this.
  */
-export async function DELETE(
+async function deleteHandler(
   req: NextRequest,
   { params }: { params: Promise<{ tenantId: string }> },
 ): Promise<Response> {
@@ -195,6 +196,10 @@ export async function DELETE(
     throw err;
   }
 }
+
+export const DELETE = withRateLimit(deleteHandler, {
+  category: "tenants:write",
+});
 
 async function computeCounts(
   tenantId: string,

@@ -1,9 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { acceptInvite } from "@/lib/invites";
+import { withRateLimit } from "@/lib/rate-limit";
 import { buildSessionSetCookie } from "@/lib/session/cookie";
 import { getSessionFromReq } from "@/lib/session/server";
 
-export async function POST(
+async function postHandler(
   req: NextRequest,
   { params }: { params: Promise<{ token: string }> },
 ): Promise<Response> {
@@ -38,3 +39,5 @@ export async function POST(
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
+
+export const POST = withRateLimit(postHandler, { category: "invites:write" });

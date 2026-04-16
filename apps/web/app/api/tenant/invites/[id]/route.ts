@@ -1,9 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireTenantCtx, TenantAccessError } from "@/lib/db/tenant-context";
 import { revokeInvite } from "@/lib/invites";
+import { withRateLimit } from "@/lib/rate-limit";
 import { RbacError, requireRole } from "@/lib/rbac";
 
-export async function DELETE(
+async function deleteHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -26,3 +27,7 @@ export async function DELETE(
     throw err;
   }
 }
+
+export const DELETE = withRateLimit(deleteHandler, {
+  category: "invites:write",
+});

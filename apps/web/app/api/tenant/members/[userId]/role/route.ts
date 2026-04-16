@@ -4,6 +4,7 @@ import { db } from "@/lib/db/client";
 import { countOwners } from "@/lib/db/memberships";
 import { memberships } from "@/lib/db/schema";
 import { requireTenantCtx, TenantAccessError } from "@/lib/db/tenant-context";
+import { withRateLimit } from "@/lib/rate-limit";
 import { RbacError, requireRole, type Role } from "@/lib/rbac";
 
 const VALID_ROLES: Role[] = ["owner", "admin", "member", "viewer"];
@@ -23,7 +24,7 @@ async function safeAudit(
   }
 }
 
-export async function PATCH(
+async function patchHandler(
   req: NextRequest,
   { params }: { params: Promise<{ userId: string }> },
 ): Promise<Response> {
@@ -101,3 +102,7 @@ export async function PATCH(
     throw err;
   }
 }
+
+export const PATCH = withRateLimit(patchHandler, {
+  category: "members:write",
+});
