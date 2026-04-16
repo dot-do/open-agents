@@ -1,8 +1,10 @@
 import { checkBotId } from "botid/server";
 import { botIdConfig } from "@/lib/botid";
-import { gateway, generateText } from "ai";
+import { generateText } from "ai";
 import { z } from "zod";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { resolveGatewayModel } from "@/lib/keys";
+import type { TenantContext } from "@/lib/db/tenant-context";
 
 /**
  * Generates a short, descriptive session title from a user message using AI.
@@ -12,13 +14,14 @@ import { getServerSession } from "@/lib/session/get-server-session";
  */
 export async function generateSessionTitle(
   message: string,
+  ctx?: Pick<TenantContext, "tenantId"> | null,
 ): Promise<string | null> {
   const trimmed = message.trim().slice(0, 2000);
   if (trimmed.length === 0) return null;
 
   try {
     const result = await generateText({
-      model: gateway("anthropic/claude-haiku-4.5"),
+      model: await resolveGatewayModel(ctx ?? null, "anthropic/claude-haiku-4.5"),
       prompt: `You are a developer tool that names coding sessions. Generate a concise title (max 5 words) for a coding session based on the user's first message below. The title should help the user quickly identify what this session is about at a glance. Do NOT use quotes or punctuation around the title. Respond with ONLY the title, nothing else.
 
 User message:
@@ -45,6 +48,11 @@ export async function POST(req: Request) {
   if (!session?.user) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
+  // Resolve tenant from session (lightweight — full requireTenantCtx needs
+  // NextRequest; this handler receives `Request`). activeTenantId on the
+  // session is sufficient for key resolution.
+  const tenantId = session?.activeTenantId ?? null;
+  const ctx = tenantId ? ({ tenantId } as const) : null;
 
   const botVerification = await checkBotId(botIdConfig);
   if (botVerification.isBot) {
@@ -69,7 +77,7 @@ export async function POST(req: Request) {
 
   const { message } = parsedBody.data;
 
-  const title = await generateSessionTitle(message);
+  const title = await generateSessionTitle(message, ctx);
 
   if (!title) {
     return Response.json(

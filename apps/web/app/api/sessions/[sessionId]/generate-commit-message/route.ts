@@ -1,10 +1,11 @@
 import { checkBotId } from "botid/server";
 import { botIdConfig } from "@/lib/botid";
 import { connectSandbox } from "@open-harness/sandbox";
-import { gateway, generateText } from "ai";
+import { generateText } from "ai";
 import { getSessionById } from "@/lib/db/sessions";
 import { isSandboxActive } from "@/lib/sandbox/utils";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { resolveGatewayModel } from "@/lib/keys";
 
 export const maxDuration = 30;
 
@@ -47,8 +48,12 @@ export async function POST(
     return Response.json({ message: "chore: update repository changes" });
   }
 
+  const tenantId = session?.activeTenantId ?? dbSession.tenantId ?? null;
   const result = await generateText({
-    model: gateway("anthropic/claude-haiku-4.5"),
+    model: await resolveGatewayModel(
+      tenantId ? { tenantId } : null,
+      "anthropic/claude-haiku-4.5",
+    ),
     prompt: `Generate a concise git commit message for these changes. Use conventional commit format (e.g., "feat:", "fix:", "refactor:"). One line only, max 72 characters.
 
 Session context: ${dbSession.title}

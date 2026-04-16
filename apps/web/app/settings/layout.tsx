@@ -1,8 +1,10 @@
 "use client";
 
 import {
+  Activity,
   ArrowLeft,
   Cable,
+  KeyRound,
   LogOut,
   Menu,
   Settings as SettingsIcon,
@@ -85,6 +87,18 @@ const sidebarItems = [
     label: "Model Variants",
     href: "/settings/model-variants",
     icon: SlidersHorizontal,
+  },
+  {
+    id: "api-keys",
+    label: "API Keys",
+    href: "/settings/api-keys",
+    icon: KeyRound,
+  },
+  {
+    id: "usage",
+    label: "Usage",
+    href: "/settings/usage",
+    icon: Activity,
   },
   {
     id: "leaderboard",

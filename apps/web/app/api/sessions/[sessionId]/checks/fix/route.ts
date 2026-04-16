@@ -5,7 +5,8 @@ import {
 import type { PullRequestCheckRun } from "@/lib/github/client";
 import { getUserGitHubToken } from "@/lib/github/user-token";
 import { Octokit } from "@octokit/rest";
-import { gateway, generateText } from "ai";
+import { generateText } from "ai";
+import { resolveGatewayModel } from "@/lib/keys";
 
 type RouteContext = {
   params: Promise<{ sessionId: string }>;
@@ -141,7 +142,10 @@ function formatFixResponse(
 
 // ── Log compaction via LLM ──────────────────────────────────────────────
 
-async function compactLog(rawLog: string): Promise<string> {
+async function compactLog(
+  rawLog: string,
+  tenantId: string | null = null,
+): Promise<string> {
   // For short logs, no point running through an LLM — they're already small
   // enough to include in full.
   if (rawLog.length <= 4000) {
@@ -159,7 +163,10 @@ async function compactLog(rawLog: string): Promise<string> {
   }
 
   const result = await generateText({
-    model: gateway("anthropic/claude-haiku-4.5"),
+    model: await resolveGatewayModel(
+      tenantId ? { tenantId } : null,
+      "anthropic/claude-haiku-4.5",
+    ),
     system: LOG_SUMMARIZATION_PROMPT,
     prompt: logInput,
   });
