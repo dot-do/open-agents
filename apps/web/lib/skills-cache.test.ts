@@ -13,27 +13,36 @@ const exampleSkills: SkillMetadata[] = [
 ];
 
 describe("skills cache", () => {
-  test("derives cache keys from sandbox name, legacy snapshot id, or local scope", () => {
+  test("derives tenant-scoped cache keys from sandbox name, legacy snapshot id, or local scope", () => {
     expect(
-      getSkillsCacheKey("session-1", {
+      getSkillsCacheKey("t_abc", "session-1", {
         type: "vercel",
         sandboxName: "session_session-1",
         snapshotId: "snap-123",
       }),
-    ).toBe("skills:v1:session-1:session_session-1");
+    ).toBe("tenant:t_abc:skills:v1:session-1:session_session-1");
 
     expect(
-      getSkillsCacheKey("session-1", {
+      getSkillsCacheKey("t_abc", "session-1", {
         type: "vercel",
         snapshotId: "snap-123",
       }),
-    ).toBe("skills:v1:session-1:snap-123");
+    ).toBe("tenant:t_abc:skills:v1:session-1:snap-123");
 
     expect(
-      getSkillsCacheKey("session-1", {
+      getSkillsCacheKey("t_abc", "session-1", {
         type: "vercel",
       }),
-    ).toBe("skills:v1:session-1:local");
+    ).toBe("tenant:t_abc:skills:v1:session-1:local");
+  });
+
+  test("two tenants with the same sessionId get distinct cache keys", () => {
+    const sandboxState = { type: "vercel" as const, sandboxName: "shared" };
+    const a = getSkillsCacheKey("tenant-a", "session-shared", sandboxState);
+    const b = getSkillsCacheKey("tenant-b", "session-shared", sandboxState);
+    expect(a).not.toBe(b);
+    expect(a.startsWith("tenant:tenant-a:")).toBe(true);
+    expect(b.startsWith("tenant:tenant-b:")).toBe(true);
   });
 
   test("caches empty skill arrays in the in-memory fallback until TTL expires", async () => {
@@ -45,15 +54,30 @@ describe("skills cache", () => {
     });
     const sandboxState = { type: "vercel" as const };
 
-    await cache.set("session-1", sandboxState, []);
+    await cache.set("t_abc", "session-1", sandboxState, []);
 
-    expect(await cache.get("session-1", sandboxState)).toEqual([]);
+    expect(await cache.get("t_abc", "session-1", sandboxState)).toEqual([]);
 
     nowMs += 999;
-    expect(await cache.get("session-1", sandboxState)).toEqual([]);
+    expect(await cache.get("t_abc", "session-1", sandboxState)).toEqual([]);
 
     nowMs += 2;
-    expect(await cache.get("session-1", sandboxState)).toBeNull();
+    expect(await cache.get("t_abc", "session-1", sandboxState)).toBeNull();
+  });
+
+  test("cache writes by one tenant are not visible to another tenant for the same sessionId", async () => {
+    const cache = createSkillsCache({
+      ttlSeconds: 60,
+      getRedisClient: () => null,
+    });
+    const sandboxState = { type: "vercel" as const };
+
+    await cache.set("tenant-a", "session-1", sandboxState, exampleSkills);
+
+    expect(await cache.get("tenant-a", "session-1", sandboxState)).toEqual(
+      exampleSkills,
+    );
+    expect(await cache.get("tenant-b", "session-1", sandboxState)).toBeNull();
   });
 
   test("falls back to the in-memory cache when Redis reads fail", async () => {
@@ -80,8 +104,10 @@ describe("skills cache", () => {
       sandboxName: "session_session-1",
     };
 
-    await cache.set("session-1", sandboxState, exampleSkills);
-    expect(await cache.get("session-1", sandboxState)).toEqual(exampleSkills);
+    await cache.set("t_abc", "session-1", sandboxState, exampleSkills);
+    expect(await cache.get("t_abc", "session-1", sandboxState)).toEqual(
+      exampleSkills,
+    );
     expect(loggerCalls).toHaveLength(1);
   });
 });

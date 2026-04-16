@@ -15,11 +15,12 @@ type ConnectedSandbox = Awaited<ReturnType<typeof connectSandbox>>;
 type ActiveSandboxState = NonNullable<SessionRecord["sandboxState"]>;
 
 async function loadSessionSkills(
+  tenantId: string,
   sessionId: string,
   sandboxState: ActiveSandboxState,
   sandbox: ConnectedSandbox,
 ): Promise<DiscoveredSkills> {
-  const cachedSkills = await getCachedSkills(sessionId, sandboxState);
+  const cachedSkills = await getCachedSkills(tenantId, sessionId, sandboxState);
   if (cachedSkills !== null) {
     return cachedSkills;
   }
@@ -30,7 +31,7 @@ async function loadSessionSkills(
   const skillDirs = await getSandboxSkillDirectories(sandbox);
 
   const discoveredSkills = await discoverSkills(sandbox, skillDirs);
-  await setCachedSkills(sessionId, sandboxState, discoveredSkills);
+  await setCachedSkills(tenantId, sessionId, sandboxState, discoveredSkills);
   return discoveredSkills;
 }
 
@@ -76,7 +77,16 @@ export async function createChatRuntime(params: {
     }
   }
 
-  const skills = await loadSessionSkills(sessionId, sandboxState, sandbox);
+  // Tenant-scope the cache key. Sessions without a tenantId are legacy
+  // single-tenant rows; use a sentinel namespace to keep them isolated from
+  // any real tenant's keyspace.
+  const cacheTenantId = sessionRecord.tenantId ?? "_legacy";
+  const skills = await loadSessionSkills(
+    cacheTenantId,
+    sessionId,
+    sandboxState,
+    sandbox,
+  );
 
   return {
     sandbox,

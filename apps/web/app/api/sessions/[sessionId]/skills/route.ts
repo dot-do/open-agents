@@ -60,10 +60,20 @@ export async function GET(req: Request, context: RouteContext) {
     return Response.json({ error: "Sandbox not initialized" }, { status: 400 });
   }
 
+  // Tenant-scope the cache key so two tenants cannot read/poison each other's
+  // skill list via a colliding sessionId. Sessions without a tenantId are
+  // legacy single-tenant rows; use a sentinel namespace so they don't collide
+  // with any real tenantId either.
+  const cacheTenantId = sessionRecord.tenantId ?? "_legacy";
+
   const refresh = new URL(req.url).searchParams.get("refresh") === "1";
 
   if (!refresh) {
-    const cachedSkills = await getCachedSkills(sessionId, sandboxState);
+    const cachedSkills = await getCachedSkills(
+      cacheTenantId,
+      sessionId,
+      sandboxState,
+    );
     if (cachedSkills !== null) {
       return Response.json({ skills: toSkillSuggestions(cachedSkills) });
     }
@@ -78,7 +88,7 @@ export async function GET(req: Request, context: RouteContext) {
     const skillDirs = await getSandboxSkillDirectories(sandbox);
 
     const skills = await discoverSkills(sandbox, skillDirs);
-    await setCachedSkills(sessionId, sandboxState, skills);
+    await setCachedSkills(cacheTenantId, sessionId, sandboxState, skills);
 
     const response: SkillsResponse = { skills: toSkillSuggestions(skills) };
     return Response.json(response);

@@ -13,14 +13,17 @@ interface TestSandboxState {
 interface TestSessionRecord {
   id: string;
   userId: string;
+  tenantId: string | null;
   sandboxState: TestSandboxState | null;
 }
 
 const cacheReadCalls: Array<{
+  tenantId: string;
   sessionId: string;
   sandboxState: TestSandboxState | null;
 }> = [];
 const cacheWriteCalls: Array<{
+  tenantId: string;
   sessionId: string;
   sandboxState: TestSandboxState | null;
   skills: SkillMetadata[];
@@ -95,18 +98,20 @@ function registerRouteMocks() {
 
   mock.module("@/lib/skills-cache", () => ({
     getCachedSkills: async (
+      tenantId: string,
       sessionId: string,
       sandboxState: TestSandboxState | null,
     ) => {
-      cacheReadCalls.push({ sessionId, sandboxState });
+      cacheReadCalls.push({ tenantId, sessionId, sandboxState });
       return cachedSkills;
     },
     setCachedSkills: async (
+      tenantId: string,
       sessionId: string,
       sandboxState: TestSandboxState | null,
       skills: SkillMetadata[],
     ) => {
-      cacheWriteCalls.push({ sessionId, sandboxState, skills });
+      cacheWriteCalls.push({ tenantId, sessionId, sandboxState, skills });
     },
   }));
 
@@ -172,6 +177,7 @@ describe("/api/sessions/[sessionId]/skills", () => {
     sessionRecord = {
       id: "session-1",
       userId: "user-1",
+      tenantId: "tenant-1",
       sandboxState: {
         type: "vercel",
         sandboxId: "sbx-123",
@@ -225,6 +231,7 @@ describe("/api/sessions/[sessionId]/skills", () => {
     });
     expect(cacheReadCalls).toEqual([
       {
+        tenantId: "tenant-1",
         sessionId: "session-1",
         sandboxState: {
           type: "vercel",
@@ -292,6 +299,7 @@ describe("/api/sessions/[sessionId]/skills", () => {
     ]);
     expect(cacheWriteCalls).toEqual([
       {
+        tenantId: "tenant-1",
         sessionId: "session-1",
         sandboxState: {
           type: "vercel",

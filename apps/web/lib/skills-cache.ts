@@ -1,8 +1,23 @@
 import type { SkillMetadata, SkillOptions } from "@open-harness/agent";
 import type { SandboxState } from "@open-harness/sandbox";
+import { tenantKey } from "./cache-keys";
 import { createRedisClient, isRedisConfigured } from "./redis";
 
-const SKILLS_CACHE_PREFIX = "skills:v1";
+/**
+ * Skills cache.
+ *
+ * Multitenancy: skill discovery results are PER-SESSION (and per-sandbox
+ * scope), but session IDs are not provably unique across tenants in this
+ * fork — a tenant could theoretically craft or guess another tenant's
+ * sessionId and pollute its cached skill list (which is then surfaced to
+ * the model and to the UI). To prevent that, every cache key is wrapped in
+ * `tenantKey(tenantId, ...)` so two tenants share the Redis instance but
+ * never the same key space.
+ *
+ * The cache is short-lived (4h TTL) and self-heals on miss, so we do not
+ * migrate any pre-existing un-prefixed keys — they will simply expire.
+ */
+const SKILLS_CACHE_NAMESPACE = "skills:v1";
 export const SKILLS_CACHE_TTL_SECONDS = 4 * 60 * 60;
 
 type SkillsCacheEntry = {
@@ -59,10 +74,16 @@ function getSandboxScope(state: SandboxState | null | undefined): string {
 }
 
 export function getSkillsCacheKey(
+  tenantId: string,
   sessionId: string,
   sandboxState: SandboxState | null | undefined,
 ): string {
-  return `${SKILLS_CACHE_PREFIX}:${sessionId}:${getSandboxScope(sandboxState)}`;
+  return tenantKey(
+    tenantId,
+    SKILLS_CACHE_NAMESPACE,
+    sessionId,
+    getSandboxScope(sandboxState),
+  );
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -199,16 +220,21 @@ export function createSkillsCache(options?: CreateSkillsCacheOptions) {
   };
 
   return {
-    getKey(sessionId: string, sandboxState: SandboxState | null | undefined) {
-      return getSkillsCacheKey(sessionId, sandboxState);
+    getKey(
+      tenantId: string,
+      sessionId: string,
+      sandboxState: SandboxState | null | undefined,
+    ) {
+      return getSkillsCacheKey(tenantId, sessionId, sandboxState);
     },
 
     async get(
+      tenantId: string,
       sessionId: string,
       sandboxState: SandboxState | null | undefined,
     ): Promise<SkillMetadata[] | null> {
       const currentTime = now();
-      const key = getSkillsCacheKey(sessionId, sandboxState);
+      const key = getSkillsCacheKey(tenantId, sessionId, sandboxState);
       const redisClient = getRedisClient();
 
       if (!redisClient) {
@@ -239,12 +265,13 @@ export function createSkillsCache(options?: CreateSkillsCacheOptions) {
     },
 
     async set(
+      tenantId: string,
       sessionId: string,
       sandboxState: SandboxState | null | undefined,
       skills: SkillMetadata[],
     ): Promise<void> {
       const currentTime = now();
-      const key = getSkillsCacheKey(sessionId, sandboxState);
+      const key = getSkillsCacheKey(tenantId, sessionId, sandboxState);
       writeToMemory(key, skills, currentTime);
 
       const redisClient = getRedisClient();
@@ -267,16 +294,18 @@ export function createSkillsCache(options?: CreateSkillsCacheOptions) {
 const sharedSkillsCache = createSkillsCache();
 
 export async function getCachedSkills(
+  tenantId: string,
   sessionId: string,
   sandboxState: SandboxState | null | undefined,
 ): Promise<SkillMetadata[] | null> {
-  return sharedSkillsCache.get(sessionId, sandboxState);
+  return sharedSkillsCache.get(tenantId, sessionId, sandboxState);
 }
 
 export async function setCachedSkills(
+  tenantId: string,
   sessionId: string,
   sandboxState: SandboxState | null | undefined,
   skills: SkillMetadata[],
 ): Promise<void> {
-  await sharedSkillsCache.set(sessionId, sandboxState, skills);
+  await sharedSkillsCache.set(tenantId, sessionId, sandboxState, skills);
 }
