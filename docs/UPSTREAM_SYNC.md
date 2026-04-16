@@ -13,6 +13,19 @@ upstream's `/[username]` at the app root). Both coexist today; deprecation
 of `/[username]` happens in a later PR once all tenant-aware pages are
 migrated. Do not delete `/[username]` during upstream syncs.
 
+### Redirect layer
+
+`apps/web/app/[username]/layout.tsx` (fork-only) now 308-redirects legacy
+hits to `/t/[tenantSlug]/...` by resolving the user's oldest-membership
+tenant via `apps/web/lib/username-to-tenant.ts`. The underlying
+`[username]` pages stay on disk so upstream merges remain low-friction —
+the redirect simply fires before any of their business logic runs.
+
+To disable the redirect (e.g. when debugging an upstream regression in a
+`/[username]` page), set `DISABLE_LEGACY_USERNAME_ROUTES=false` in the
+relevant `.env`. With the flag off, requests pass through to the original
+upstream page unchanged. The flag defaults to `true`.
+
 ## One-time setup
 
 ```sh
