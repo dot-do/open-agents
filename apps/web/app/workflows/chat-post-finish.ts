@@ -283,6 +283,35 @@ export async function recordWorkflowUsage(
           outputTokens: totalUsage.outputTokens ?? 0,
         },
       });
+
+      // Emit Stripe metering for token usage. Best-effort and lazy so a
+      // billing outage can't take down the workflow step.
+      if (workflowRun?.sessionId) {
+        try {
+          const { db } = await import("@/lib/db/client");
+          const { sessions } = await import("@/lib/db/schema");
+          const { eq } = await import("drizzle-orm");
+          const [row] = await db
+            .select({ tenantId: sessions.tenantId })
+            .from(sessions)
+            .where(eq(sessions.id, workflowRun.sessionId))
+            .limit(1);
+          const tenantId = row?.tenantId;
+          if (tenantId) {
+            const { recordStripeUsageAsync } = await import("@/lib/billing");
+            const tokensIn = totalUsage.inputTokens ?? 0;
+            const tokensOut = totalUsage.outputTokens ?? 0;
+            recordStripeUsageAsync({ tenantId, userId }, "tokens_in", tokensIn);
+            recordStripeUsageAsync(
+              { tenantId, userId },
+              "tokens_out",
+              tokensOut,
+            );
+          }
+        } catch (error) {
+          console.warn("[billing] failed to emit token meter event:", error);
+        }
+      }
     }
 
     // Record subagent usage (aggregated by model)

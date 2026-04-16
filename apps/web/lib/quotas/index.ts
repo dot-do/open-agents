@@ -204,6 +204,17 @@ export async function recordSandboxMinutes(
         updatedAt: new Date(),
       },
     });
+  // Mirror the minute count into Stripe metering. Intentionally not
+  // awaited — metering must never block or fail the atomic counter path.
+  // Lazy-import so the quotas module doesn't pull `stripe` at startup.
+  void (async () => {
+    try {
+      const { recordStripeUsageAsync } = await import("@/lib/billing");
+      recordStripeUsageAsync({ tenantId }, "sandbox_minutes", minutes);
+    } catch {
+      /* metering is best-effort */
+    }
+  })();
 }
 
 /**
