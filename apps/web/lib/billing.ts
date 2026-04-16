@@ -42,13 +42,47 @@ export const PLAN_MATRIX: Record<
     concurrent_sandboxes: number | "custom";
     byo_keys: boolean;
     sso: boolean;
+    /**
+     * Per-tenant API rate limit (wave 2A). `rpm` is the sustained
+     * requests/minute ceiling; `burst` is short-term additive cushion above
+     * the sustained rate within the same 60s sliding window.
+     */
+    rateLimit: { rpm: number; burst: number };
   }
 > = {
-  free: { concurrent_sandboxes: 1, byo_keys: false, sso: false },
-  pro: { concurrent_sandboxes: 3, byo_keys: true, sso: false },
-  team: { concurrent_sandboxes: 10, byo_keys: true, sso: false },
-  enterprise: { concurrent_sandboxes: "custom", byo_keys: true, sso: true },
+  free: {
+    concurrent_sandboxes: 1,
+    byo_keys: false,
+    sso: false,
+    rateLimit: { rpm: 60, burst: 30 },
+  },
+  pro: {
+    concurrent_sandboxes: 3,
+    byo_keys: true,
+    sso: false,
+    rateLimit: { rpm: 600, burst: 120 },
+  },
+  team: {
+    concurrent_sandboxes: 10,
+    byo_keys: true,
+    sso: false,
+    rateLimit: { rpm: 3000, burst: 500 },
+  },
+  enterprise: {
+    concurrent_sandboxes: "custom",
+    byo_keys: true,
+    sso: true,
+    rateLimit: { rpm: 10000, burst: 2000 },
+  },
 };
+
+/**
+ * Return the plan's `{ rpm, burst }` rate-limit ceiling. Callers typically
+ * multiply `rpm`/`burst` by 5x for read buckets (see `withRateLimit`).
+ */
+export function getRateLimitForPlan(plan: Plan): { rpm: number; burst: number } {
+  return PLAN_MATRIX[plan].rateLimit;
+}
 
 export class PlanUpgradeRequired extends Error {
   readonly feature: PlanFeature;
