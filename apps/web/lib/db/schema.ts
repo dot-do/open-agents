@@ -704,3 +704,32 @@ export const tenantInvites = pgTable(
 
 export type TenantInvite = typeof tenantInvites.$inferSelect;
 export type NewTenantInvite = typeof tenantInvites.$inferInsert;
+
+// Tenant SSO configuration (P3, enterprise plan only).
+// One row per tenant. The platform-side provider (WorkOS / Clerk /
+// generic SAML) actually terminates the SSO handshake; this table stores
+// the connection handle + the email domain used for auto-routing. The
+// provider SDK is intentionally NOT a dependency — see
+// `apps/web/lib/sso/index.ts` for the pluggable adapter interface.
+export const tenantSsoConfigs = pgTable(
+  "tenant_sso_configs",
+  {
+    tenantId: text("tenant_id")
+      .primaryKey()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    provider: text("provider", {
+      enum: ["workos", "clerk", "saml-generic"],
+    }).notNull(),
+    connectionId: text("connection_id"),
+    domain: text("domain"),
+    enabled: boolean("enabled").notNull().default(false),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("tenant_sso_configs_domain_idx").on(table.domain)],
+);
+
+export type TenantSsoConfig = typeof tenantSsoConfigs.$inferSelect;
+export type NewTenantSsoConfig = typeof tenantSsoConfigs.$inferInsert;
+

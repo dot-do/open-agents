@@ -129,3 +129,38 @@ Vercel is the happy path (the project is workflow-SDK native). Any host that
 supports Next 16 and long-running workflows will work if you bring your own
 sandbox orchestrator. See `apps/web/SANDBOX-LIFECYCLE.md` for the sandbox
 contract.
+
+## 9. SSO (optional, enterprise plan)
+
+Single sign-on is scaffolded but not wired — the app ships provider-agnostic
+stubs so an enterprise customer can drop in WorkOS, Clerk, or a generic SAML
+broker without touching the rest of the auth surface.
+
+What's in the repo today:
+
+- `tenant_sso_configs` table (migration `0035_tenant_sso.sql`) storing one
+  row per tenant: provider, connection id, email domain, enabled flag.
+- `apps/web/lib/sso/index.ts` — `SsoAdapter` interface, `getSsoAdapter()`
+  returning stub adapters that throw `SsoNotConfigured`, and
+  `lookupSsoForDomain(email)` for future login routes.
+- `Settings → SSO` page gated behind `assertPlanAllows(ctx, 'sso')` — only
+  visible/usable on the enterprise plan. Saves the config row but does
+  not run any handshake.
+- `GET/PUT /api/tenant/sso` — admin-only config CRUD.
+
+To wire a real provider on your fork:
+
+1. Install the SDK (`bun add workos` or `bun add @clerk/backend`, …).
+2. Replace the corresponding entry in `STUB_ADAPTERS` with a real adapter
+   that implements `initiate()` + `complete()`.
+3. Set the env vars the stub advertises in its `SsoNotConfigured` error:
+   - WorkOS: `WORKOS_API_KEY`, `WORKOS_CLIENT_ID`
+   - Clerk: `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`
+   - Generic SAML: `SAML_IDP_METADATA_URL`, `SAML_SP_ENTITY_ID`
+4. Add a login route that calls `lookupSsoForDomain(email)` and delegates
+   to `getSsoAdapter(provider).initiate(domain, returnTo)` before falling
+   back to the default GitHub / Vercel OAuth flows.
+
+The intent is to keep SSO additive — existing OAuth flows remain the
+default for non-enterprise tenants.
+
