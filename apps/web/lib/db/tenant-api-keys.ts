@@ -42,15 +42,8 @@ export type ActiveKeyResolution = {
   keyHint: string;
 };
 
-let warnedOnceAboutCbc = false;
-function warnCbcOnce() {
-  if (warnedOnceAboutCbc) return;
-  warnedOnceAboutCbc = true;
-  // eslint-disable-next-line no-console
-  console.warn(
-    "[tenant-api-keys] crypto.encrypt uses AES-256-CBC (not AEAD). " +
-      "Pending upgrade to authenticated encryption (GCM).",
-  );
+function aadFor(tenantId: string, provider: TenantApiKeyProvider): string {
+  return `tenant:${tenantId}|provider:${provider}`;
 }
 
 function hintFromPlaintext(plaintext: string): string {
@@ -112,13 +105,12 @@ export async function createKey(
     userId: string;
   },
 ): Promise<TenantApiKeyDTO> {
-  warnCbcOnce();
   const plaintext = input.plaintextKey.trim();
   if (!plaintext) {
     throw new Error("plaintextKey is required");
   }
 
-  const encrypted = encrypt(plaintext);
+  const encrypted = encrypt(plaintext, aadFor(ctx.tenantId, input.provider));
   const keyHint = hintFromPlaintext(plaintext);
   const id = randomUUID();
 
@@ -184,7 +176,6 @@ export async function getActiveKey(
   ctx: Pick<TenantContext, "tenantId">,
   provider: TenantApiKeyProvider,
 ): Promise<ActiveKeyResolution | null> {
-  warnCbcOnce();
   const rows = (await db
     .select()
     .from(tenantApiKeys)
@@ -201,7 +192,12 @@ export async function getActiveKey(
   if (!row) return null;
 
   try {
-    const plaintext = decrypt(row.encryptedKey);
+    // AAD applies only to v2 (GCM) envelopes; decrypt() ignores it on the
+    // legacy CBC path so existing rows still work until the rekey runs.
+    const plaintext = decrypt(
+      row.encryptedKey,
+      aadFor(row.tenantId, row.provider as TenantApiKeyProvider),
+    );
     return {
       id: row.id,
       provider: row.provider as TenantApiKeyProvider,

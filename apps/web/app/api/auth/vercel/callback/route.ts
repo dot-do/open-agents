@@ -5,6 +5,7 @@ import { getDefaultMembershipForUser } from "@/lib/db/memberships";
 import { upsertUser } from "@/lib/db/users";
 import { buildSessionSetCookie } from "@/lib/session/cookie";
 import type { Session } from "@/lib/session/types";
+import { createPersonalTenantForUser } from "@/lib/tenants";
 import { exchangeVercelCode, getVercelUserInfo } from "@/lib/vercel/oauth";
 
 function clearVercelOauthCookies(store: Awaited<ReturnType<typeof cookies>>) {
@@ -72,7 +73,23 @@ export async function GET(req: NextRequest): Promise<Response> {
       tokenExpiresAt,
     });
 
-    const defaultMembership = await getDefaultMembershipForUser(userId);
+    let defaultMembership = await getDefaultMembershipForUser(userId);
+
+    // New-user onboarding: users created after the wave-1 backfill may not
+    // have a personal tenant yet. Create one lazily on first login so the
+    // rest of the app (tenant-scoped queries) always has a membership.
+    if (!defaultMembership) {
+      try {
+        await createPersonalTenantForUser({
+          id: userId,
+          username,
+          name: userInfo.name,
+        });
+        defaultMembership = await getDefaultMembershipForUser(userId);
+      } catch (error) {
+        console.error("Personal tenant creation failed:", error);
+      }
+    }
 
     const session: Session = {
       created: Date.now(),
