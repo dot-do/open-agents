@@ -193,3 +193,33 @@ To wire a real provider on your fork:
 The intent is to keep SSO additive — existing OAuth flows remain the
 default for non-enterprise tenants.
 
+## 10. Testing isolation
+
+`apps/web/tests/multitenant-isolation.test.ts` is an end-to-end smoke test
+that creates two tenants with overlapping fixture data (sessions, chats,
+api keys, github installations, audit events) and asserts that tenant A
+cannot read, update, or delete tenant B's rows through either:
+
+- the app-level `scopedQuery` helper in `apps/web/lib/db/tenant-guard.ts`, or
+- a transaction primed with `setTenantContext(tx, id)` from
+  `apps/web/lib/db/rls.ts` (Postgres RLS policies in `0034_tenant_rls.sql`).
+
+The test self-skips when `POSTGRES_URL` is unset so CI environments
+without a database still pass. To run locally against a throwaway
+database:
+
+```sh
+# 1. Point at a local/test Postgres and apply migrations.
+export POSTGRES_URL="postgres://user:pass@localhost:5432/open_agents_test"
+bun run --cwd apps/web db:migrate:apply
+
+# 2. Run the isolated test suite (or just this file).
+bun run test:isolated
+# or
+bun test apps/web/tests/multitenant-isolation.test.ts
+```
+
+The test cleans up everything it inserts in `afterAll`. A failure here
+indicates either a regression in `scopedQuery` or that the RLS policy
+for the affected table is missing / misconfigured.
+
