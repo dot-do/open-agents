@@ -19,6 +19,16 @@ import {
 // `apps/web/lib/db/tenant-context.ts`. Adding new tenant-scoped tables?
 // Add a `tenantId` column + composite index and route writes through the
 // tenant guard helpers.
+//
+// Wave 3 additions: for new tenant-scoped tables, prefer routing queries
+// through `scopedQuery(ctx)` / `enforceTenantEq` in
+// `apps/web/lib/db/tenant-guard.ts`. That helper auto-injects
+// `eq(table.tenantId, ctx.tenantId)` into selects/updates/deletes and
+// asserts tenant match on single-row reads in dev. It's a thin convenience
+// wrapper on top of Drizzle — not a replacement for the query builder.
+// Defense-in-depth: Postgres RLS policies live in `0034_tenant_rls.sql`
+// and are primed per-tx by `setTenantContext(db, tenantId)` in
+// `apps/web/lib/db/rls.ts`; query-layer guard remains primary.
 
 export const tenants = pgTable(
   "tenants",
@@ -570,3 +580,127 @@ export const tenantUsageCounters = pgTable(
 
 export type TenantUsageCounter = typeof tenantUsageCounters.$inferSelect;
 export type NewTenantUsageCounter = typeof tenantUsageCounters.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Wave 3 — audit / billing / api keys / invites
+// ---------------------------------------------------------------------------
+
+// Append-only audit log for tenant-scoped actions. Feature agents write via
+// a dedicated `audit(ctx, action, target, metadata?)` helper (wave 3B).
+export const auditEvents = pgTable(
+  "audit_events",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    actorUserId: text("actor_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    action: text("action").notNull(),
+    target: text("target"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("audit_events_tenant_created_idx").on(
+      table.tenantId,
+      table.createdAt.desc(),
+    ),
+    index("audit_events_tenant_action_idx").on(table.tenantId, table.action),
+  ],
+);
+
+export type AuditEvent = typeof auditEvents.$inferSelect;
+export type NewAuditEvent = typeof auditEvents.$inferInsert;
+
+// Tenant-scoped, BYOK provider API keys. `encryptedKey` is ciphertext
+// produced by `apps/web/lib/crypto.ts#encrypt`. Plaintext is ONLY accessible
+// via an explicit decrypt helper at read time — never via generic selects.
+// `keyHint` stores the last 4 chars in plaintext for UI confirmation.
+export const tenantApiKeys = pgTable(
+  "tenant_api_keys",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    provider: text("provider", {
+      enum: ["anthropic", "openai", "gateway", "google", "xai"],
+    }).notNull(),
+    label: text("label"),
+    encryptedKey: text("encrypted_key").notNull(),
+    keyHint: text("key_hint").notNull(),
+    createdByUserId: text("created_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    revokedAt: timestamp("revoked_at"),
+  },
+  (table) => [
+    uniqueIndex("tenant_api_keys_tenant_provider_label_idx").on(
+      table.tenantId,
+      table.provider,
+      table.label,
+    ),
+    index("tenant_api_keys_tenant_idx").on(table.tenantId),
+  ],
+);
+
+export type TenantApiKey = typeof tenantApiKeys.$inferSelect;
+export type NewTenantApiKey = typeof tenantApiKeys.$inferInsert;
+
+// Stripe customer + subscription mirror. One row per tenant.
+export const tenantStripeCustomers = pgTable("tenant_stripe_customers", {
+  tenantId: text("tenant_id")
+    .primaryKey()
+    .references(() => tenants.id, { onDelete: "cascade" }),
+  stripeCustomerId: text("stripe_customer_id").notNull().unique(),
+  plan: text("plan", {
+    enum: ["free", "pro", "team", "enterprise"],
+  })
+    .notNull()
+    .default("free"),
+  subscriptionStatus: text("subscription_status"),
+  subscriptionId: text("subscription_id"),
+  currentPeriodEnd: timestamp("current_period_end"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type TenantStripeCustomer = typeof tenantStripeCustomers.$inferSelect;
+export type NewTenantStripeCustomer =
+  typeof tenantStripeCustomers.$inferInsert;
+
+// Tenant member invites. Role enum mirrors memberships.role.
+export const tenantInvites = pgTable(
+  "tenant_invites",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    role: text("role", {
+      enum: ["owner", "admin", "member", "viewer"],
+    }).notNull(),
+    token: text("token").notNull().unique(),
+    invitedByUserId: text("invited_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    acceptedAt: timestamp("accepted_at"),
+    acceptedByUserId: text("accepted_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+  },
+  (table) => [
+    index("tenant_invites_tenant_idx").on(table.tenantId),
+    index("tenant_invites_email_idx").on(table.email),
+  ],
+);
+
+export type TenantInvite = typeof tenantInvites.$inferSelect;
+export type NewTenantInvite = typeof tenantInvites.$inferInsert;
