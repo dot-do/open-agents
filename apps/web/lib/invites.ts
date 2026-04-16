@@ -11,6 +11,7 @@ import {
   users,
 } from "@/lib/db/schema";
 import type { TenantContext } from "@/lib/db/tenant-context";
+import { escapeHtml, sendEmail } from "@/lib/email";
 import { requireRole, type Role } from "@/lib/rbac";
 
 const DEFAULT_EXPIRY_DAYS = 7;
@@ -63,70 +64,14 @@ async function sendInviteEmail(args: {
   token: string;
 }): Promise<void> {
   const url = acceptUrl(args.token);
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) {
-    // eslint-disable-next-line no-console
-    console.log(
-      JSON.stringify({
-        event: "invite.email_dev",
-        to: args.email,
-        tenant: args.tenantName,
-        acceptUrl: url,
-      }),
-    );
-    return;
-  }
-  try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        from:
-          process.env.INVITE_FROM_EMAIL ?? "Open Agents <noreply@openagents.dev>",
-        to: [args.email],
-        subject: `You're invited to join ${args.tenantName} on Open Agents`,
-        html: `<p>You've been invited to join <strong>${escapeHtml(args.tenantName)}</strong>${
-          args.inviterEmail ? ` by ${escapeHtml(args.inviterEmail)}` : ""
-        }.</p><p><a href="${url}">Accept invite</a></p><p>This link expires in ${DEFAULT_EXPIRY_DAYS} days.</p>`,
-      }),
-    });
-    if (!res.ok) {
-      // eslint-disable-next-line no-console
-      console.warn(
-        JSON.stringify({
-          event: "invite.email_failed",
-          status: res.status,
-          to: args.email,
-        }),
-      );
-    }
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.warn(
-      JSON.stringify({
-        event: "invite.email_failed",
-        to: args.email,
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
-  }
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) =>
-    c === "&"
-      ? "&amp;"
-      : c === "<"
-        ? "&lt;"
-        : c === ">"
-          ? "&gt;"
-          : c === '"'
-            ? "&quot;"
-            : "&#39;",
-  );
+  await sendEmail({
+    to: args.email,
+    subject: `You're invited to join ${args.tenantName} on Open Agents`,
+    html: `<p>You've been invited to join <strong>${escapeHtml(args.tenantName)}</strong>${
+      args.inviterEmail ? ` by ${escapeHtml(args.inviterEmail)}` : ""
+    }.</p><p><a href="${url}">Accept invite</a></p><p>This link expires in ${DEFAULT_EXPIRY_DAYS} days.</p>`,
+    event: "invite.email",
+  });
 }
 
 export async function createInvite(

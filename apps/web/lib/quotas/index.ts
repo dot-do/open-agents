@@ -15,6 +15,34 @@ import {
   clearSandboxState,
 } from "@/lib/sandbox/utils";
 import { audit, withTenantTags } from "@/lib/audit";
+import { dispatchQuotaAlert } from "@/lib/quota-alerts";
+
+/**
+ * Best-effort wrapper around {@link dispatchQuotaAlert}. Email failures
+ * MUST NOT block quota enforcement (kills, audits, etc.), so we swallow
+ * any throw and emit a structured log line for ops to investigate.
+ */
+async function safeDispatchQuotaAlert(
+  tenantId: string,
+  kind: "daily_cost" | "monthly_minutes",
+  threshold: 80 | 100,
+  current: number,
+  limit: number,
+): Promise<void> {
+  try {
+    await dispatchQuotaAlert(tenantId, kind, threshold, current, limit);
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        event: "quota.alert.dispatch_failed",
+        tenantId,
+        kind,
+        threshold,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
+  }
+}
 
 /**
  * Thrown when a tenant action would exceed a configured quota. API routes
@@ -385,6 +413,10 @@ export async function sweepTenantQuotas(): Promise<QuotaSweepReport[]> {
     const quotas = await getTenantQuotas(tenantId);
     const minutesOver =
       counters.minutes >= quotas.maxMonthlyMinutes;
+    const minutesPct =
+      quotas.maxMonthlyMinutes > 0
+        ? counters.minutes / quotas.maxMonthlyMinutes
+        : 0;
     const costPct =
       quotas.maxDailyCostCents > 0
         ? counters.cents / quotas.maxDailyCostCents
@@ -414,6 +446,13 @@ export async function sweepTenantQuotas(): Promise<QuotaSweepReport[]> {
           },
         },
       );
+      await safeDispatchQuotaAlert(
+        tenantId,
+        "monthly_minutes",
+        100,
+        counters.minutes,
+        quotas.maxMonthlyMinutes,
+      );
       reports.push({
         tenantId,
         action: "minutes_over",
@@ -424,6 +463,29 @@ export async function sweepTenantQuotas(): Promise<QuotaSweepReport[]> {
         },
       });
       continue;
+    }
+
+    // 80% minutes warning — no kill, just notify owners (idempotent per
+    // month so resending across cron ticks is safe).
+    if (minutesPct >= 0.8) {
+      console.warn(
+        JSON.stringify({
+          event: "tenant.minutes.warning",
+          tenantId,
+          used: counters.minutes,
+          limit: quotas.maxMonthlyMinutes,
+          pct: Math.round(minutesPct * 100),
+        }),
+      );
+      await safeDispatchQuotaAlert(
+        tenantId,
+        "monthly_minutes",
+        80,
+        counters.minutes,
+        quotas.maxMonthlyMinutes,
+      );
+      // Fall through — minutes warning shouldn't block cost evaluation,
+      // but we still record a report only if no cost branch fires.
     }
 
     if (costPct >= 1) {
@@ -450,6 +512,13 @@ export async function sweepTenantQuotas(): Promise<QuotaSweepReport[]> {
           },
         },
       );
+      await safeDispatchQuotaAlert(
+        tenantId,
+        "daily_cost",
+        100,
+        counters.cents,
+        quotas.maxDailyCostCents,
+      );
       reports.push({
         tenantId,
         action: "cost_halted",
@@ -471,6 +540,13 @@ export async function sweepTenantQuotas(): Promise<QuotaSweepReport[]> {
           limit: quotas.maxDailyCostCents,
           pct: Math.round(costPct * 100),
         }),
+      );
+      await safeDispatchQuotaAlert(
+        tenantId,
+        "daily_cost",
+        80,
+        counters.cents,
+        quotas.maxDailyCostCents,
       );
       reports.push({
         tenantId,
