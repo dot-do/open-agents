@@ -4,6 +4,15 @@ This fork tracks [`vercel-labs/open-agents`](https://github.com/vercel-labs/open
 The upstream is active; we pull from it roughly weekly to stay close to the
 reference app.
 
+## Legacy route note — `/[username]` → `/t/[tenantSlug]`
+
+Upstream's user-centric `/[username]/...` routes live on unchanged and are
+considered **legacy**. The multitenant successor is `/t/[tenantSlug]/...`
+(prefixed under `/t/` to avoid a Next.js dynamic-segment collision with
+upstream's `/[username]` at the app root). Both coexist today; deprecation
+of `/[username]` happens in a later PR once all tenant-aware pages are
+migrated. Do not delete `/[username]` during upstream syncs.
+
 ## One-time setup
 
 ```sh

@@ -8,6 +8,7 @@ import { HomeSkeleton } from "@/components/home-skeleton";
 import type { SandboxType } from "@/components/sandbox-selector-compact";
 import { SessionDrawer } from "@/components/session-drawer";
 import { SessionStarter } from "@/components/session-starter";
+import { TenantSwitcher } from "@/components/tenant-switcher";
 import { UserAvatarDropdown } from "@/components/user-avatar-dropdown";
 import { useSession } from "@/hooks/use-session";
 import { useSessions } from "@/hooks/use-sessions";
@@ -83,6 +84,7 @@ export function HomePage({ hasSessionCookie, lastRepo }: HomePageProps) {
           <span className="text-lg font-semibold">Open Agents</span>
         </div>
         <div className="flex items-center gap-2 sm:justify-self-end">
+          <TenantSwitcher />
           <button
             type="button"
             onClick={() => setDrawerOpen(true)}
