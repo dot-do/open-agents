@@ -28,6 +28,23 @@ function isPublicApi(pathname: string): boolean {
   return PUBLIC_API_PREFIXES.some((p) => pathname.startsWith(p));
 }
 
+/**
+ * Tenant-scoped Personal Access Tokens use the `oa_pat_<base64url>` plaintext
+ * format. Middleware runs in the Edge runtime and cannot hit Postgres
+ * (postgres-js is Node-only), so PAT lookup happens inside Node-runtime
+ * route handlers via `requireTenantCtxFromBearer`. We only detect the header
+ * shape here and let the request through; routes that opt into PAT auth
+ * resolve and validate the token themselves. Routes that DON'T opt in still
+ * see no session/userId/role headers and will reject the request.
+ */
+function hasPatBearer(req: NextRequest): boolean {
+  const header =
+    req.headers.get("authorization") ?? req.headers.get("Authorization");
+  if (!header) return false;
+  const match = /^Bearer\s+(oa_pat_\S+)$/i.exec(header);
+  return match !== null;
+}
+
 export async function middleware(req: NextRequest): Promise<NextResponse> {
   const { pathname } = req.nextUrl;
   if (!pathname.startsWith("/api/") || isPublicApi(pathname)) {
@@ -36,6 +53,13 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
 
   const cookieValue = req.cookies.get(SESSION_COOKIE_NAME)?.value;
   if (!cookieValue) {
+    if (hasPatBearer(req)) {
+      // Defer to per-route bearer resolution. Mark the request so downstream
+      // helpers can short-circuit cookie lookups without re-parsing headers.
+      const requestHeaders = new Headers(req.headers);
+      requestHeaders.set("x-auth-via", "pat");
+      return NextResponse.next({ request: { headers: requestHeaders } });
+    }
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

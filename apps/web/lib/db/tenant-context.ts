@@ -3,6 +3,10 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { memberships } from "@/lib/db/schema";
 import { getSessionFromReq } from "@/lib/session/server";
+import {
+  lookupTokenByPlaintext,
+  type TokenScope,
+} from "@/lib/db/tenant-api-tokens";
 
 /**
  * Tenancy query guard.
@@ -25,6 +29,15 @@ export type TenantContext = {
   tenantId: string;
   userId: string;
   role: Role;
+  /**
+   * How the caller authenticated. `pat` indicates a tenant-scoped Personal
+   * Access Token (resolved by `requireTenantCtxFromBearer`); the absence of
+   * `via` means "session cookie" (the default path through `requireTenantCtx`).
+   * Used to tag audit/spans and to enforce scope on PAT-authenticated routes.
+   */
+  via?: "pat";
+  /** PAT scope when `via === "pat"`; undefined for session-auth callers. */
+  scope?: TokenScope;
 };
 
 export class TenantAccessError extends Error {
@@ -138,4 +151,97 @@ export async function withTenant<T>(
   query: () => Promise<T>,
 ): Promise<T> {
   return query();
+}
+
+const SCOPE_RANK: Record<TokenScope, number> = {
+  read: 1,
+  write: 2,
+  admin: 3,
+};
+
+/**
+ * Per-route bearer-token resolver. The Next.js middleware runs in the Edge
+ * runtime by default and `postgres-js` (our Drizzle driver) cannot run on
+ * Edge — so PAT lookup must happen inside Node-runtime route handlers,
+ * not in middleware. Routes that want to opt into PAT auth call this helper
+ * BEFORE `requireTenantCtx` so a `Bearer oa_pat_…` header is honored
+ * without a session cookie. Returns `null` when no usable bearer header is
+ * present, letting the caller fall through to session-cookie auth.
+ *
+ * Resolved contexts are tagged `via: 'pat'` (and carry the token's `scope`)
+ * so audit hooks and `requireScope` can distinguish programmatic clients
+ * from interactive sessions.
+ */
+export async function requireTenantCtxFromBearer(
+  req: NextRequest | Request,
+): Promise<TenantContext | null> {
+  const header =
+    req.headers.get("authorization") ?? req.headers.get("Authorization");
+  if (!header) return null;
+  const match = /^Bearer\s+(\S+)$/i.exec(header);
+  if (!match) return null;
+  const plaintext = match[1];
+  if (!plaintext) return null;
+  const lookup = await lookupTokenByPlaintext(plaintext);
+  if (!lookup) {
+    throw new TenantAccessError("Invalid or revoked bearer token");
+  }
+
+  // PAT-scoped role mapping: a PAT acts on behalf of its creator but the
+  // membership row is the source of truth for the user's role at request
+  // time. If the creator was demoted or removed from the tenant since the
+  // token was minted, refuse the request rather than silently honoring it.
+  const rows = await db
+    .select({ role: memberships.role })
+    .from(memberships)
+    .where(
+      and(
+        eq(memberships.userId, lookup.userId),
+        eq(memberships.tenantId, lookup.tenantId),
+      ),
+    )
+    .limit(1);
+  const row = rows[0];
+  if (!row) {
+    throw new TenantAccessError(
+      "Bearer token's creator is no longer a tenant member",
+    );
+  }
+
+  return {
+    tenantId: lookup.tenantId,
+    userId: lookup.userId,
+    role: row.role as Role,
+    via: "pat",
+    scope: lookup.scope,
+  };
+}
+
+/**
+ * Combined session-or-bearer resolver. Routes that accept both interactive
+ * users and programmatic clients call this once at the top of the handler.
+ * Bearer tokens are checked first so a request with both a cookie and an
+ * Authorization header is treated as the (more restrictive) PAT call.
+ */
+export async function requireTenantCtxAny(
+  req: NextRequest,
+): Promise<TenantContext> {
+  const bearer = await requireTenantCtxFromBearer(req);
+  if (bearer) return bearer;
+  return requireTenantCtx(req);
+}
+
+/**
+ * Scope guard for PAT-authenticated requests. Session-cookie callers (no
+ * `via`) bypass this check — their authorization is governed by the
+ * existing role-based checks in each route. Throws `TenantAccessError` so
+ * routes can render a uniform 403 via their existing catch.
+ */
+export function requireScope(ctx: TenantContext, min: TokenScope): void {
+  if (ctx.via !== "pat" || !ctx.scope) return;
+  if (SCOPE_RANK[ctx.scope] < SCOPE_RANK[min]) {
+    throw new TenantAccessError(
+      `PAT scope '${ctx.scope}' insufficient — '${min}' or higher required`,
+    );
+  }
 }
