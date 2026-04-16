@@ -224,5 +224,17 @@ async function applyPlanChange(params: {
     } catch (error) {
       console.warn("[stripe.webhook] audit emit failed:", error);
     }
+    // Outbound webhook fan-out — best effort, never breaks the Stripe flow.
+    try {
+      const { safeEnqueueEvent } = await import("@/lib/webhooks");
+      await safeEnqueueEvent(params.tenantId, "billing.plan_changed", {
+        previousPlan,
+        plan: nextPlan,
+        subscriptionStatus: params.subscriptionStatus,
+        stripeCustomerId: params.stripeCustomerId,
+      });
+    } catch (error) {
+      console.warn("[stripe.webhook] outbound webhook emit failed:", error);
+    }
   }
 }

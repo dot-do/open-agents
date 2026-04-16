@@ -85,10 +85,20 @@ function generatePlaintext(): string {
   return `${TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`;
 }
 
+/**
+ * Cheap prefix check used by the middleware (Edge runtime — no DB) to decide
+ * whether to defer to per-route bearer resolution. Does NOT validate the
+ * token; never call this in place of `lookupTokenByPlaintext`.
+ */
 export function looksLikePat(value: string | null | undefined): boolean {
   return typeof value === "string" && value.startsWith(TOKEN_PREFIX);
 }
 
+/**
+ * Compare two scopes by rank (read < write < admin). Exported alongside
+ * `requireScope` so callers that need a boolean (e.g. UI gating) can avoid
+ * a try/catch.
+ */
 export function compareScope(actual: TokenScope, min: TokenScope): boolean {
   return SCOPE_RANK[actual] >= SCOPE_RANK[min];
 }

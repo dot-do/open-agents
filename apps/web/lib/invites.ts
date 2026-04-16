@@ -263,6 +263,21 @@ export async function acceptInvite(args: {
     metadata: { role: invite.role, email: invite.email },
   });
 
+  // Outbound webhook fan-out — best effort, never breaks the accept flow.
+  try {
+    const mod = await import("@/lib/webhooks").catch(() => null);
+    if (mod?.safeEnqueueEvent) {
+      await mod.safeEnqueueEvent(invite.tenantId, "member.joined", {
+        userId,
+        email: invite.email,
+        role: invite.role,
+        inviteId: invite.id,
+      });
+    }
+  } catch {
+    // already best-effort
+  }
+
   return {
     tenantId: invite.tenantId,
     tenantSlug: tenantRow?.slug ?? "",
