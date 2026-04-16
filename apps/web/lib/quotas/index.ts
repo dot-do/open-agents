@@ -48,6 +48,8 @@ const DEFAULT_QUOTAS: Omit<TenantQuota, "tenantId" | "updatedAt"> = {
   maxMonthlyMinutes: 600,
   maxDailyCostCents: 500,
   hardKillEnabled: true,
+  // null = no per-provider caps; only the global maxDailyCostCents applies.
+  maxDailySpendByProvider: null,
 };
 
 /**

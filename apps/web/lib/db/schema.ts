@@ -553,6 +553,12 @@ export const tenantQuotas = pgTable("tenant_quotas", {
   maxMonthlyMinutes: integer("max_monthly_minutes").notNull().default(600),
   maxDailyCostCents: integer("max_daily_cost_cents").notNull().default(500),
   hardKillEnabled: boolean("hard_kill_enabled").notNull().default(true),
+  // Wave 6 (lcc): optional per-provider daily spend caps in cents.
+  // NULL = no per-provider limit; only the global maxDailyCostCents applies.
+  // Stored as `{ "anthropic": 200, "openai": 100 }` (values are cents).
+  maxDailySpendByProvider: jsonb("max_daily_spend_by_provider").$type<
+    Record<string, number>
+  >(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
@@ -732,4 +738,143 @@ export const tenantSsoConfigs = pgTable(
 
 export type TenantSsoConfig = typeof tenantSsoConfigs.$inferSelect;
 export type NewTenantSsoConfig = typeof tenantSsoConfigs.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Wave 6 — tenant API tokens (PAT), webhooks, webhook deliveries, quota alerts
+// ---------------------------------------------------------------------------
+
+// Personal-access-style tokens scoped to a tenant. Plaintext is shown ONCE at
+// create time; only `tokenHash` (sha256 of plaintext) is persisted. `tokenHint`
+// stores the last 4 chars of the plaintext for UI confirmation. Feature logic
+// (issue open-agents-bjm) lives in a separate file — this is schema only.
+export const tenantApiTokens = pgTable(
+  "tenant_api_tokens",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    tokenHint: text("token_hint").notNull(),
+    scope: text("scope", {
+      enum: ["read", "write", "admin"],
+    }).notNull(),
+    createdByUserId: text("created_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    lastUsedAt: timestamp("last_used_at"),
+    expiresAt: timestamp("expires_at"),
+    revokedAt: timestamp("revoked_at"),
+  },
+  (table) => [index("tenant_api_tokens_tenant_idx").on(table.tenantId)],
+);
+
+export type TenantApiToken = typeof tenantApiTokens.$inferSelect;
+export type NewTenantApiToken = typeof tenantApiTokens.$inferInsert;
+
+// Outbound webhooks per tenant. `secret` is encrypted via
+// `apps/web/lib/crypto.ts#encrypt` (v2 GCM). `events` is a Postgres text[]
+// of event names (e.g. ['session.completed', 'pr.merged']). Feature logic
+// (issue open-agents-uom) lives in a separate file — this is schema only.
+export const tenantWebhooks = pgTable(
+  "tenant_webhooks",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    secret: text("secret").notNull(),
+    events: text("events").array().notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    lastDeliveryAt: timestamp("last_delivery_at"),
+    lastDeliveryStatus: integer("last_delivery_status"),
+  },
+  (table) => [
+    index("tenant_webhooks_tenant_idx").on(table.tenantId),
+    index("tenant_webhooks_enabled_idx").on(table.enabled),
+  ],
+);
+
+export type TenantWebhook = typeof tenantWebhooks.$inferSelect;
+export type NewTenantWebhook = typeof tenantWebhooks.$inferInsert;
+
+// Webhook delivery attempts — one row per (webhook, event) attempt batch.
+// `tenantId` is denormalized for fast tenant-scoped audit queries.
+// Retry worker scans (status, nextAttemptAt). See issue open-agents-uom.
+export const tenantWebhookDeliveries = pgTable(
+  "tenant_webhook_deliveries",
+  {
+    id: text("id").primaryKey(),
+    webhookId: text("webhook_id")
+      .notNull()
+      .references(() => tenantWebhooks.id, { onDelete: "cascade" }),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    event: text("event").notNull(),
+    payload: jsonb("payload").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    status: text("status", {
+      enum: ["pending", "success", "failed", "dead"],
+    }).notNull(),
+    responseStatus: integer("response_status"),
+    responseBody: text("response_body"),
+    nextAttemptAt: timestamp("next_attempt_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    completedAt: timestamp("completed_at"),
+  },
+  (table) => [
+    index("tenant_webhook_deliveries_tenant_created_idx").on(
+      table.tenantId,
+      table.createdAt.desc(),
+    ),
+    index("tenant_webhook_deliveries_status_next_idx").on(
+      table.status,
+      table.nextAttemptAt,
+    ),
+  ],
+);
+
+export type TenantWebhookDelivery =
+  typeof tenantWebhookDeliveries.$inferSelect;
+export type NewTenantWebhookDelivery =
+  typeof tenantWebhookDeliveries.$inferInsert;
+
+// Idempotency table for quota-threshold alert emails. Insert-or-skip on the
+// unique key prevents duplicate sends for the same tenant + kind + threshold
+// + period. See em4 (alerting feature agent owns the send logic).
+export const tenantQuotaAlerts = pgTable(
+  "tenant_quota_alerts",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    // Free-form kind identifier — typical values: 'daily_cost',
+    // 'monthly_minutes'. Adding new kinds does not require a migration.
+    kind: text("kind").notNull(),
+    // Percent-of-limit threshold the alert fires at (e.g. 80, 100).
+    threshold: integer("threshold").notNull(),
+    // Period bucket key — granularity matches `kind`. e.g. '2026-04-15'
+    // for daily, '2026-04' for monthly.
+    periodKey: text("period_key").notNull(),
+    sentAt: timestamp("sent_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("tenant_quota_alerts_unique_idx").on(
+      table.tenantId,
+      table.kind,
+      table.threshold,
+      table.periodKey,
+    ),
+  ],
+);
+
+export type TenantQuotaAlert = typeof tenantQuotaAlerts.$inferSelect;
+export type NewTenantQuotaAlert = typeof tenantQuotaAlerts.$inferInsert;
 
