@@ -4,6 +4,8 @@ import { encrypt } from "@/lib/crypto";
 import { getGitHubAccount, upsertGitHubAccount } from "@/lib/db/accounts";
 import { syncUserInstallations } from "@/lib/github/installations-sync";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { audit } from "@/lib/audit";
+import { getDefaultMembershipForUser } from "@/lib/db/memberships";
 
 interface GitHubUser {
   id: number;
@@ -226,6 +228,27 @@ export async function GET(req: Request): Promise<Response> {
         installTenantId ? { tenantId: installTenantId } : undefined,
       );
       synced = true;
+
+      // Best-effort audit: attribute to the explicit install tenant when present,
+      // otherwise to the user's default tenant membership.
+      let auditTenantId = installTenantId;
+      if (!auditTenantId) {
+        const personal = await getDefaultMembershipForUser(session.user.id);
+        auditTenantId = personal?.tenantId ?? null;
+      }
+      if (auditTenantId && (syncedInstallationsCount ?? 0) > 0) {
+        await audit(
+          { tenantId: auditTenantId, userId: session.user.id },
+          "installation.added",
+          {
+            metadata: {
+              source: "github_app_callback",
+              count: syncedInstallationsCount,
+              accountLogin: personalAccountLogin,
+            },
+          },
+        );
+      }
     } catch (error) {
       console.error("Failed syncing installations from user token:", error);
     }

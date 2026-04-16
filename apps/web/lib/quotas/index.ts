@@ -14,6 +14,7 @@ import {
   canOperateOnSandbox,
   clearSandboxState,
 } from "@/lib/sandbox/utils";
+import { audit, withTenantTags } from "@/lib/audit";
 
 /**
  * Thrown when a tenant action would exceed a configured quota. API routes
@@ -253,6 +254,16 @@ export async function killTenantSandboxes(
   tenantId: string,
   reason: string,
 ): Promise<KillResult[]> {
+  const ctx = { tenantId, userId: null, role: null };
+  return withTenantTags(ctx, "quota.kill", () =>
+    killTenantSandboxesInner(tenantId, reason),
+  );
+}
+
+async function killTenantSandboxesInner(
+  tenantId: string,
+  reason: string,
+): Promise<KillResult[]> {
   const rows = await db
     .select({
       id: sessions.id,
@@ -290,6 +301,11 @@ export async function killTenantSandboxes(
           sessionId: row.id,
           reason,
         }),
+      );
+      await audit(
+        { tenantId, userId: null },
+        "session.killed",
+        { target: row.id, metadata: { reason, source: "quota" } },
       );
       results.push({ sessionId: row.id, stopped: true });
     } catch (error) {
@@ -373,6 +389,18 @@ export async function sweepTenantQuotas(): Promise<QuotaSweepReport[]> {
       if (quotas.hardKillEnabled) {
         await killTenantSandboxes(tenantId, "monthly_minutes_exhausted");
       }
+      await audit(
+        { tenantId, userId: null },
+        "quota.halted",
+        {
+          metadata: {
+            quota: "monthly_minutes",
+            used: counters.minutes,
+            limit: quotas.maxMonthlyMinutes,
+            killed: quotas.hardKillEnabled,
+          },
+        },
+      );
       reports.push({
         tenantId,
         action: "minutes_over",
@@ -397,6 +425,18 @@ export async function sweepTenantQuotas(): Promise<QuotaSweepReport[]> {
       if (quotas.hardKillEnabled) {
         await killTenantSandboxes(tenantId, "daily_cost_exhausted");
       }
+      await audit(
+        { tenantId, userId: null },
+        "quota.halted",
+        {
+          metadata: {
+            quota: "daily_cost_cents",
+            used: counters.cents,
+            limit: quotas.maxDailyCostCents,
+            killed: quotas.hardKillEnabled,
+          },
+        },
+      );
       reports.push({
         tenantId,
         action: "cost_halted",

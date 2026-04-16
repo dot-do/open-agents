@@ -36,7 +36,10 @@ import { requireTenantCtx, TenantAccessError } from "@/lib/db/tenant-context";
 import {
   QuotaExceededError,
   checkConcurrencyQuota,
+  countActiveSandboxes,
 } from "@/lib/quotas";
+import { getPlan, PLAN_MATRIX } from "@/lib/billing";
+import { audit, withTenantTags } from "@/lib/audit";
 // import { buildDevelopmentDotenvFromVercelProject } from "@/lib/vercel/projects";
 // import { getUserVercelToken } from "@/lib/vercel/token";
 
@@ -146,6 +149,31 @@ export async function POST(req: Request) {
     throw error;
   }
 
+  // Plan gate: concurrent_sandboxes cap per plan matrix. Runs alongside
+  // the numeric quota below — whichever is lower wins.
+  try {
+    const plan = await getPlan({ tenantId: tenantCtx.tenantId });
+    const planCap = PLAN_MATRIX[plan].concurrent_sandboxes;
+    if (planCap !== "custom") {
+      const active = await countActiveSandboxes(tenantCtx.tenantId);
+      if (active >= planCap) {
+        return Response.json(
+          {
+            error: "plan_upgrade_required",
+            feature: "concurrent_sandboxes",
+            plan,
+            limit: planCap,
+            current: active,
+          },
+          { status: 402 },
+        );
+      }
+    }
+  } catch (error) {
+    // Fail open on plan lookup so a billing outage can't block spawns.
+    console.warn("[billing] plan check failed:", error);
+  }
+
   try {
     await checkConcurrencyQuota(tenantCtx.tenantId);
   } catch (error) {
@@ -225,7 +253,11 @@ export async function POST(req: Request) {
       }
     : undefined;
 
-  const sandbox = await connectSandbox({
+  const sandbox = await withTenantTags(
+    tenantCtx,
+    "sandbox.provision",
+    async () =>
+  await connectSandbox({
     state: {
       type: "vercel",
       ...(sandboxName ? { sandboxName } : {}),
@@ -246,7 +278,15 @@ export async function POST(req: Request) {
         ...(sessionId ? { sessionId } : {}),
       },
     },
-  });
+  }),
+  );
+
+  if (sessionId) {
+    await audit(tenantCtx, "session.created", {
+      target: sessionId,
+      metadata: { repoUrl: repoUrl ?? null, branch: repoUrl ? branch : null },
+    });
+  }
 
   if (sessionId && sandbox.getState) {
     const nextState = sandbox.getState() as SandboxState;
@@ -324,6 +364,15 @@ export async function DELETE(req: Request) {
     return authResult.response;
   }
 
+  let killCtx;
+  try {
+    killCtx = await requireTenantCtx(
+      req as unknown as import("next/server").NextRequest,
+    );
+  } catch {
+    killCtx = null;
+  }
+
   let body: unknown;
   try {
     body = await req.json();
@@ -375,6 +424,13 @@ export async function DELETE(req: Request) {
     lifecycleRunId: null,
     lifecycleError: null,
   });
+
+  if (killCtx) {
+    await audit(killCtx, "session.killed", {
+      target: sessionId,
+      metadata: { reason: "user_requested" },
+    });
+  }
 
   return Response.json({ success: true });
 }

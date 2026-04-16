@@ -13,6 +13,7 @@ import { updateSession } from "@/lib/db/sessions";
 import { db } from "@/lib/db/client";
 import { sessions } from "@/lib/db/schema";
 import { archiveSession } from "@/lib/sandbox/archive-session";
+import { audit } from "@/lib/audit";
 
 const installationWebhookSchema = z.object({
   action: z.string(),
@@ -211,7 +212,20 @@ export async function POST(req: Request): Promise<Response> {
   const installationUrl = parsed.data.installation.html_url ?? null;
 
   if (event === "installation" && parsed.data.action === "deleted") {
+    const existingRows = await getInstallationsByInstallationId(installationId);
     const deleted = await deleteInstallationByInstallationId(installationId);
+    for (const row of existingRows) {
+      if (row.tenantId) {
+        await audit(
+          { tenantId: row.tenantId, userId: null },
+          "installation.removed",
+          {
+            target: String(installationId),
+            metadata: { source: "github_webhook", userId: row.userId },
+          },
+        );
+      }
+    }
     return Response.json({ ok: true, deleted });
   }
 
@@ -253,6 +267,18 @@ export async function POST(req: Request): Promise<Response> {
         repositorySelection,
         installationUrl,
       });
+      await audit(
+        { tenantId, userId: row.userId },
+        "installation.added",
+        {
+          target: String(installationId),
+          metadata: {
+            accountLogin: account.login,
+            accountType: normalizeAccountType(account.type),
+            source: "github_webhook",
+          },
+        },
+      );
     }
 
     return Response.json({ ok: true, updatedUsers: existing.length });

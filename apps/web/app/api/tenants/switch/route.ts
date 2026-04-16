@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { audit, withTenantTags } from "@/lib/audit";
 import { getMembership } from "@/lib/db/memberships";
 import { buildSessionSetCookie } from "@/lib/session/cookie";
 import { getSessionFromReq } from "@/lib/session/server";
@@ -46,5 +47,14 @@ export async function POST(req: NextRequest): Promise<Response> {
     role: membership.role,
   });
   response.headers.append("Set-Cookie", await buildSessionSetCookie(next));
+
+  const ctx = { tenantId, userId, role: membership.role };
+  await withTenantTags(ctx, "tenant.switched", async () => {
+    await audit(ctx, "tenant.switched", {
+      target: tenantId,
+      metadata: { previousTenantId: session.activeTenantId ?? null },
+    });
+  });
+
   return response;
 }

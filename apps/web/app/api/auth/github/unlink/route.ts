@@ -1,8 +1,12 @@
 import { cookies } from "next/headers";
 import { decrypt } from "@/lib/crypto";
 import { deleteGitHubAccount, getGitHubAccount } from "@/lib/db/accounts";
-import { deleteInstallationsByUserId } from "@/lib/db/installations";
+import {
+  deleteInstallationsByUserId,
+  getInstallationsByUserId,
+} from "@/lib/db/installations";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { audit } from "@/lib/audit";
 
 export async function POST(): Promise<Response> {
   const session = await getServerSession();
@@ -11,10 +15,25 @@ export async function POST(): Promise<Response> {
   }
 
   try {
+    const existingInstallations = await getInstallationsByUserId(
+      session.user.id,
+    );
     const [ghAccount, installationsDeleted] = await Promise.all([
       getGitHubAccount(session.user.id),
       deleteInstallationsByUserId(session.user.id),
     ]);
+    for (const inst of existingInstallations) {
+      if (inst.tenantId) {
+        await audit(
+          { tenantId: inst.tenantId, userId: session.user.id },
+          "installation.removed",
+          {
+            target: String(inst.installationId),
+            metadata: { source: "user_unlink" },
+          },
+        );
+      }
+    }
 
     if (!ghAccount && !installationsDeleted) {
       return Response.json(
