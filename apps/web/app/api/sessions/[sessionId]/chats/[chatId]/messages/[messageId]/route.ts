@@ -66,7 +66,7 @@ export async function DELETE(req: Request, context: RouteContext) {
     await updateChatActiveStreamId(chatId, null, authResult.tenantId);
   }
 
-  const result = await deleteChatMessageAndFollowing(chatId, messageId);
+  const result = await deleteChatMessageAndFollowing(chatId, messageId, authResult.tenantId);
 
   if (result.status === "not_found") {
     return Response.json({ error: "Message not found" }, { status: 404 });

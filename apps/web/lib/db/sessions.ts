@@ -810,15 +810,21 @@ type DeleteChatMessageAndFollowingResult =
 export async function deleteChatMessageAndFollowing(
   chatId: string,
   messageId: string,
+  tenantId?: string,
 ): Promise<DeleteChatMessageAndFollowingResult> {
+  if (!tenantId) {
+    console.warn("[tenant-guard] deleteChatMessageAndFollowing called without tenantId — TODO(security) thread tenantId from caller");
+  }
   return db.transaction(async (tx) => {
+    const conditions = [eq(chatMessages.chatId, chatId)];
+    if (tenantId) conditions.push(eq(chatMessages.tenantId, tenantId));
     const orderedMessages = await tx
       .select({
         id: chatMessages.id,
         role: chatMessages.role,
       })
       .from(chatMessages)
-      .where(eq(chatMessages.chatId, chatId))
+      .where(and(...conditions))
       .orderBy(chatMessages.createdAt, chatMessages.id);
 
     const startIndex = orderedMessages.findIndex(
