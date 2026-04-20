@@ -130,6 +130,7 @@ export async function requireOwnedSessionWithSandboxGuard(
   const ownedSessionResult = await requireOwnedSession({
     userId,
     sessionId,
+    tenantId: params.tenantId,
     forbiddenMessage,
   });
   if (!ownedSessionResult.ok) {

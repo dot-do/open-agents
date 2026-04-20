@@ -470,20 +470,35 @@ export async function getChatSummariesBySessionId(
 export async function updateChat(
   chatId: string,
   data: Partial<Omit<NewChat, "id" | "sessionId" | "createdAt">>,
+  tenantId?: string | undefined,
 ) {
+  if (!tenantId) {
+    console.warn("[tenant-guard] updateChat called without tenantId — TODO(security) thread tenantId from caller");
+  }
   const [chat] = await db
     .update(chats)
     .set({ ...data, updatedAt: new Date() })
-    .where(eq(chats.id, chatId))
+    .where(
+      tenantId
+        ? and(eq(chats.id, chatId), eq(chats.tenantId, tenantId))
+        : eq(chats.id, chatId),
+    )
     .returning();
   return chat;
 }
 
-export async function touchChat(chatId: string, activityAt = new Date()) {
+export async function touchChat(chatId: string, activityAt = new Date(), tenantId?: string | undefined) {
+  if (!tenantId) {
+    console.warn("[tenant-guard] touchChat called without tenantId — TODO(security) thread tenantId from caller");
+  }
   const [chat] = await db
     .update(chats)
     .set({ updatedAt: activityAt })
-    .where(eq(chats.id, chatId))
+    .where(
+      tenantId
+        ? and(eq(chats.id, chatId), eq(chats.tenantId, tenantId))
+        : eq(chats.id, chatId),
+    )
     .returning();
   return chat;
 }
@@ -491,14 +506,22 @@ export async function touchChat(chatId: string, activityAt = new Date()) {
 export async function updateChatAssistantActivity(
   chatId: string,
   activityAt: Date,
+  tenantId?: string | undefined,
 ) {
+  if (!tenantId) {
+    console.warn("[tenant-guard] updateChatAssistantActivity called without tenantId — TODO(security) thread tenantId from caller");
+  }
   const [chat] = await db
     .update(chats)
     .set({
       lastAssistantMessageAt: activityAt,
       updatedAt: activityAt,
     })
-    .where(eq(chats.id, chatId))
+    .where(
+      tenantId
+        ? and(eq(chats.id, chatId), eq(chats.tenantId, tenantId))
+        : eq(chats.id, chatId),
+    )
     .returning();
   return chat;
 }
@@ -506,11 +529,19 @@ export async function updateChatAssistantActivity(
 export async function updateChatActiveStreamId(
   chatId: string,
   streamId: string | null,
+  tenantId?: string | undefined,
 ) {
+  if (!tenantId) {
+    console.warn("[tenant-guard] updateChatActiveStreamId called without tenantId — TODO(security) thread tenantId from caller");
+  }
   await db
     .update(chats)
     .set({ activeStreamId: streamId })
-    .where(eq(chats.id, chatId));
+    .where(
+      tenantId
+        ? and(eq(chats.id, chatId), eq(chats.tenantId, tenantId))
+        : eq(chats.id, chatId),
+    );
 }
 
 /**
@@ -521,23 +552,39 @@ export async function compareAndSetChatActiveStreamId(
   chatId: string,
   expectedStreamId: string | null,
   nextStreamId: string | null,
+  tenantId?: string | undefined,
 ) {
+  if (!tenantId) {
+    console.warn("[tenant-guard] compareAndSetChatActiveStreamId called without tenantId — TODO(security) thread tenantId from caller");
+  }
   const activeStreamMatch =
     expectedStreamId === null
       ? isNull(chats.activeStreamId)
       : eq(chats.activeStreamId, expectedStreamId);
 
+  const conditions = [eq(chats.id, chatId), activeStreamMatch];
+  if (tenantId) {
+    conditions.push(eq(chats.tenantId, tenantId));
+  }
+
   const [updated] = await db
     .update(chats)
     .set({ activeStreamId: nextStreamId })
-    .where(and(eq(chats.id, chatId), activeStreamMatch))
+    .where(and(...conditions))
     .returning({ id: chats.id });
 
   return Boolean(updated);
 }
 
-export async function deleteChat(chatId: string) {
-  await db.delete(chats).where(eq(chats.id, chatId));
+export async function deleteChat(chatId: string, tenantId?: string | undefined) {
+  if (!tenantId) {
+    console.warn("[tenant-guard] deleteChat called without tenantId — TODO(security) thread tenantId from caller");
+  }
+  await db.delete(chats).where(
+    tenantId
+      ? and(eq(chats.id, chatId), eq(chats.tenantId, tenantId))
+      : eq(chats.id, chatId),
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -732,15 +779,25 @@ export async function upsertChatMessageScoped(
   });
 }
 
-export async function getChatMessageById(messageId: string) {
+export async function getChatMessageById(messageId: string, tenantId?: string | undefined) {
+  if (!tenantId) {
+    console.warn("[tenant-guard] getChatMessageById called without tenantId — TODO(security) thread tenantId from caller");
+  }
   return db.query.chatMessages.findFirst({
-    where: eq(chatMessages.id, messageId),
+    where: tenantId
+      ? and(eq(chatMessages.id, messageId), eq(chatMessages.tenantId, tenantId))
+      : eq(chatMessages.id, messageId),
   });
 }
 
-export async function getChatMessages(chatId: string) {
+export async function getChatMessages(chatId: string, tenantId?: string | undefined) {
+  if (!tenantId) {
+    console.warn("[tenant-guard] getChatMessages called without tenantId — TODO(security) thread tenantId from caller");
+  }
   return db.query.chatMessages.findMany({
-    where: eq(chatMessages.chatId, chatId),
+    where: tenantId
+      ? and(eq(chatMessages.chatId, chatId), eq(chatMessages.tenantId, tenantId))
+      : eq(chatMessages.chatId, chatId),
     orderBy: [chatMessages.createdAt, chatMessages.id],
   });
 }
@@ -816,11 +873,18 @@ export async function deleteChatMessageAndFollowing(
   });
 }
 
-export async function isFirstChatMessage(chatId: string, messageId: string) {
+export async function isFirstChatMessage(chatId: string, messageId: string, tenantId?: string | undefined) {
+  if (!tenantId) {
+    console.warn("[tenant-guard] isFirstChatMessage called without tenantId — TODO(security) thread tenantId from caller");
+  }
   const rows = await db
     .select({ id: chatMessages.id })
     .from(chatMessages)
-    .where(eq(chatMessages.chatId, chatId))
+    .where(
+      tenantId
+        ? and(eq(chatMessages.chatId, chatId), eq(chatMessages.tenantId, tenantId))
+        : eq(chatMessages.chatId, chatId),
+    )
     .orderBy(chatMessages.createdAt, chatMessages.id)
     .limit(2);
 

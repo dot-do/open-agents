@@ -63,7 +63,7 @@ export async function DELETE(req: Request, context: RouteContext) {
     }
 
     // Workflow is terminal or not found — clear the stale activeStreamId.
-    await updateChatActiveStreamId(chatId, null);
+    await updateChatActiveStreamId(chatId, null, authResult.tenantId);
   }
 
   const result = await deleteChatMessageAndFollowing(chatId, messageId);

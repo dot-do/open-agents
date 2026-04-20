@@ -103,12 +103,14 @@ export async function POST(req: Request) {
     throw new Error("Sandbox not initialized");
   }
 
+  const tenantId = authResult.tenantId;
+
   if (isManagedTemplateTrialUser(session, req.url)) {
     const latestUserMessage = getLatestUserMessage(messages);
     if (latestUserMessage) {
-      const existingMessage = await getChatMessageById(latestUserMessage.id);
+      const existingMessage = await getChatMessageById(latestUserMessage.id, tenantId);
       if (!existingMessage) {
-        const userMessageCount = await countUserMessagesByUserId(userId);
+        const userMessageCount = await countUserMessagesByUserId(userId, tenantId);
         if (userMessageCount >= MANAGED_TEMPLATE_TRIAL_MESSAGE_LIMIT) {
           return Response.json(
             { error: MANAGED_TEMPLATE_TRIAL_MESSAGE_LIMIT_ERROR },
@@ -126,6 +128,7 @@ export async function POST(req: Request) {
     const existingStreamResolution = await reconcileExistingActiveStream(
       chatId,
       chat.activeStreamId,
+      tenantId,
     );
 
     if (existingStreamResolution.action === "resume") {
@@ -150,12 +153,12 @@ export async function POST(req: Request) {
     ...buildActiveLifecycleUpdate(sessionRecord.sandboxState, {
       activityAt: requestStartedAt,
     }),
-  });
+  }, tenantId);
 
   // Persist the latest user message immediately (fire-and-forget) so it's
   // in the DB before the workflow starts. This ensures a page refresh
   // during workflow queue time still shows the message.
-  void persistLatestUserMessage(chatId, messages);
+  void persistLatestUserMessage(chatId, messages, tenantId);
 
   // Also persist any assistant messages that contain client-side tool results
   // (e.g. ask_user_question responses). Without this, tool results are only
@@ -266,6 +269,7 @@ export async function POST(req: Request) {
       chatId,
       sessionId,
       userId,
+      tenantId,
       modelId: mainModelSelection.id,
       maxSteps: 500,
       agentOptions: {
@@ -300,6 +304,7 @@ export async function POST(req: Request) {
     chatId,
     null,
     run.runId,
+    tenantId,
   );
 
   if (!claimed) {
@@ -346,6 +351,7 @@ const ACTIVE_STREAM_RECONCILIATION_MAX_ATTEMPTS = 3;
 async function reconcileExistingActiveStream(
   chatId: string,
   activeStreamId: string,
+  tenantId?: string,
 ): Promise<ExistingActiveStreamResolution> {
   const { getRun } = await import("workflow/api");
   let currentStreamId: string | null = activeStreamId;
@@ -375,12 +381,13 @@ async function reconcileExistingActiveStream(
       chatId,
       currentStreamId,
       null,
+      tenantId,
     );
     if (cleared) {
       return { action: "ready" };
     }
 
-    const latestChat = await getChatById(chatId);
+    const latestChat = await getChatById(chatId, tenantId);
     currentStreamId = latestChat?.activeStreamId ?? null;
   }
 
@@ -390,6 +397,7 @@ async function reconcileExistingActiveStream(
 async function persistLatestUserMessage(
   chatId: string,
   messages: WebAgentUIMessage[],
+  tenantId?: string,
 ): Promise<void> {
   const latestMessage = messages[messages.length - 1];
   if (!latestMessage || latestMessage.role !== "user") {
@@ -408,9 +416,9 @@ async function persistLatestUserMessage(
       return;
     }
 
-    await touchChat(chatId);
+    await touchChat(chatId, new Date(), tenantId);
 
-    const shouldSetTitle = await isFirstChatMessage(chatId, created.id);
+    const shouldSetTitle = await isFirstChatMessage(chatId, created.id, tenantId);
     if (!shouldSetTitle) {
       return;
     }
@@ -428,7 +436,7 @@ async function persistLatestUserMessage(
         textContent.length > 80
           ? `${textContent.slice(0, 80)}...`
           : textContent;
-      await updateChat(chatId, { title });
+      await updateChat(chatId, { title }, tenantId);
     }
   } catch (error) {
     console.error("Failed to persist user message:", error);

@@ -42,7 +42,7 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     const body: unknown = await request.json().catch(() => null);
     if (isStopRequestWithMessage(body)) {
-      await persistAssistantSnapshot(chatId, body.assistantMessage);
+      await persistAssistantSnapshot(chatId, body.assistantMessage, authResult.tenantId);
     }
   } catch {
     // Best-effort — don't block cancellation if persistence fails.
@@ -69,6 +69,7 @@ export async function POST(request: Request, context: RouteContext) {
     chatId,
     chat.activeStreamId,
     null,
+    authResult.tenantId,
   ).catch((err: unknown) => {
     console.error(
       `[workflow] Failed to clear activeStreamId for chat ${chatId}:`,
@@ -82,6 +83,7 @@ export async function POST(request: Request, context: RouteContext) {
 async function persistAssistantSnapshot(
   chatId: string,
   message: WebAgentUIMessage,
+  tenantId?: string,
 ): Promise<void> {
   // Insert-only: if the workflow already persisted a fuller message, this
   // is a no-op. Avoids overwriting server-side content with a stale
@@ -93,7 +95,7 @@ async function persistAssistantSnapshot(
     parts: message,
   });
   if (created) {
-    await updateChatAssistantActivity(chatId, new Date());
+    await updateChatAssistantActivity(chatId, new Date(), tenantId);
   }
 }
 

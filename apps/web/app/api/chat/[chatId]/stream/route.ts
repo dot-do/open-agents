@@ -50,7 +50,7 @@ export async function GET(_request: Request, context: RouteContext) {
       status === "failed"
     ) {
       // Workflow is done — clear the stale activeStreamId.
-      await updateChatActiveStreamId(chatId, null);
+      await updateChatActiveStreamId(chatId, null, authResult.tenantId);
       return new Response(null, { status: 204 });
     }
 
@@ -61,7 +61,7 @@ export async function GET(_request: Request, context: RouteContext) {
     return createUIMessageStreamResponse({ stream });
   } catch {
     // Workflow run not found or inaccessible — clear stale ID.
-    await updateChatActiveStreamId(chatId, null);
+    await updateChatActiveStreamId(chatId, null, authResult.tenantId);
     return new Response(null, { status: 204 });
   }
 }

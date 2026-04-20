@@ -53,7 +53,7 @@ export async function GET(req: Request, context: RouteContext) {
   }
 
   const [messages, preferences] = await Promise.all([
-    getChatMessages(chatId),
+    getChatMessages(chatId, authResult.tenantId),
     getUserPreferences(authResult.userId),
   ]);
   const modelId =
@@ -128,7 +128,7 @@ export async function PATCH(req: Request, context: RouteContext) {
     updatePayload.modelId = sanitizedModelId ?? nextModelId;
   }
 
-  const updatedChat = await updateChat(chatId, updatePayload);
+  const updatedChat = await updateChat(chatId, updatePayload, authResult.tenantId);
   if (!updatedChat) {
     return Response.json({ error: "Chat not found" }, { status: 404 });
   }
@@ -166,7 +166,7 @@ export async function DELETE(_req: Request, context: RouteContext) {
     return chatContext.response;
   }
 
-  const chats = await getChatsBySessionId(sessionId);
+  const chats = await getChatsBySessionId(sessionId, authResult.tenantId);
   if (chats.length <= 1) {
     return Response.json(
       { error: "Cannot delete the only chat in a session" },
@@ -174,6 +174,6 @@ export async function DELETE(_req: Request, context: RouteContext) {
     );
   }
 
-  await deleteChat(chatId);
+  await deleteChat(chatId, authResult.tenantId);
   return Response.json({ success: true });
 }

@@ -44,6 +44,8 @@ type Options = {
   modelId: string;
   agentOptions: OpenHarnessAgentCallOptions;
   maxSteps?: number;
+  /** Tenant ID for multi-tenant scoping. */
+  tenantId?: string;
   /** Whether auto-commit+push should run after a natural finish. */
   autoCommitEnabled?: boolean;
   /** Whether auto PR creation should run after auto-commit on a natural finish. */
@@ -544,7 +546,7 @@ export async function runAgentWorkflow(options: Options) {
     }
 
     if (sandboxState) {
-      await refreshLifecycleActivity(options.sessionId);
+      await refreshLifecycleActivity(options.sessionId, options.tenantId);
     }
 
     if (totalUsage) {
@@ -559,11 +561,11 @@ export async function runAgentWorkflow(options: Options) {
 
     // Persist the assistant message immediately so completed model output is not
     // lost if later post-finish work fails.
-    await persistAssistantMessage(options.chatId, pendingAssistantResponse);
+    await persistAssistantMessage(options.chatId, pendingAssistantResponse, options.tenantId);
 
     // Persist the sandbox state so lifecycle timers stay accurate.
     if (sandboxState) {
-      await persistSandboxState(options.sessionId, sandboxState);
+      await persistSandboxState(options.sessionId, sandboxState, options.tenantId);
     }
 
     const finishedNaturally =
@@ -692,11 +694,11 @@ export async function runAgentWorkflow(options: Options) {
     }
 
     if (didUpdateGitData) {
-      await persistAssistantMessage(options.chatId, pendingAssistantResponse);
+      await persistAssistantMessage(options.chatId, pendingAssistantResponse, options.tenantId);
     }
 
     await Promise.all([
-      clearActiveStream(options.chatId, workflowRunId),
+      clearActiveStream(options.chatId, workflowRunId, options.tenantId),
       sendFinish(writable).then(() => closeStream(writable)),
     ]);
     streamClosed = true;
@@ -720,7 +722,7 @@ export async function runAgentWorkflow(options: Options) {
       // so the chat is never permanently marked as streaming.
       if (!streamClosed) {
         await Promise.all([
-          clearActiveStream(options.chatId, workflowRunId),
+          clearActiveStream(options.chatId, workflowRunId, options.tenantId),
           sendFinish(writable).then(() => closeStream(writable)),
         ]);
       }

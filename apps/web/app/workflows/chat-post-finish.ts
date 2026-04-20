@@ -85,6 +85,7 @@ function filterNewTaskUsageEvents<T extends { toolCallId?: string }>(
 export async function persistUserMessage(
   chatId: string,
   message: WebAgentUIMessage,
+  tenantId?: string,
 ): Promise<void> {
   "use step";
 
@@ -104,9 +105,9 @@ export async function persistUserMessage(
       return;
     }
 
-    await touchChat(chatId);
+    await touchChat(chatId, new Date(), tenantId);
 
-    const shouldSetTitle = await isFirstChatMessage(chatId, created.id);
+    const shouldSetTitle = await isFirstChatMessage(chatId, created.id, tenantId);
     if (!shouldSetTitle) {
       return;
     }
@@ -125,7 +126,7 @@ export async function persistUserMessage(
 
     const title =
       textContent.length > 80 ? `${textContent.slice(0, 80)}...` : textContent;
-    await updateChat(chatId, { title });
+    await updateChat(chatId, { title }, tenantId);
   } catch (error) {
     console.error("[workflow] Failed to persist user message:", error);
   }
@@ -134,6 +135,7 @@ export async function persistUserMessage(
 export async function persistAssistantMessage(
   chatId: string,
   message: WebAgentUIMessage,
+  tenantId?: string,
 ): Promise<void> {
   "use step";
 
@@ -151,7 +153,7 @@ export async function persistAssistantMessage(
         `[workflow] Skipped assistant upsert due to ID scope conflict: ${message.id}`,
       );
     } else if (result.status === "inserted") {
-      await updateChatAssistantActivity(chatId, new Date());
+      await updateChatAssistantActivity(chatId, new Date(), tenantId);
     }
   } catch (error) {
     console.error("[workflow] Failed to persist assistant message:", error);
@@ -160,11 +162,12 @@ export async function persistAssistantMessage(
 
 export async function refreshLifecycleActivity(
   sessionId: string,
+  tenantId?: string,
 ): Promise<void> {
   "use step";
 
   try {
-    await updateSession(sessionId, buildLifecycleActivityUpdate(new Date()));
+    await updateSession(sessionId, buildLifecycleActivityUpdate(new Date()), tenantId);
   } catch (error) {
     console.error("[workflow] Failed to refresh lifecycle activity:", error);
   }
@@ -173,6 +176,7 @@ export async function refreshLifecycleActivity(
 export async function persistSandboxState(
   sessionId: string,
   sandboxState: SandboxState,
+  tenantId?: string,
 ): Promise<void> {
   "use step";
   try {
@@ -185,7 +189,7 @@ export async function persistSandboxState(
         ...buildActiveLifecycleUpdate(currentState, {
           activityAt: new Date(),
         }),
-      });
+      }, tenantId);
     }
   } catch (error) {
     console.error("[workflow] Failed to persist sandbox state:", error);
@@ -198,6 +202,7 @@ const ACTIVE_STREAM_CLEAR_RETRY_DELAY_MS = 50;
 export async function clearActiveStream(
   chatId: string,
   workflowRunId: string,
+  tenantId?: string,
 ): Promise<void> {
   "use step";
 
@@ -209,7 +214,7 @@ export async function clearActiveStream(
     try {
       // Only clear if this workflow's run ID is still the active one.
       // Prevents a late-finishing workflow from clearing a newer workflow's ID.
-      await compareAndSetChatActiveStreamId(chatId, workflowRunId, null);
+      await compareAndSetChatActiveStreamId(chatId, workflowRunId, null, tenantId);
       return;
     } catch (error) {
       if (attempt === ACTIVE_STREAM_CLEAR_MAX_ATTEMPTS) {
