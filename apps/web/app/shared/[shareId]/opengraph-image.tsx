@@ -41,9 +41,12 @@ export default async function Image({
   const share = await getShareByIdCached(shareId);
   if (!share) return fallbackImage();
 
+  // tenantId intentionally omitted — this is a public share path where access is
+  // scoped by the share record's chatId, not by tenant membership.
   const chat = await getChatById(share.chatId);
   if (!chat) return fallbackImage();
 
+  // tenantId intentionally omitted — public share path (see above).
   const session = await getSessionByIdCached(chat.sessionId);
   if (!session) return fallbackImage();
 

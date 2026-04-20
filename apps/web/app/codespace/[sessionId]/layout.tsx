@@ -17,14 +17,13 @@ export default async function CodespaceLayout({
 }: CodespaceLayoutProps) {
   const { sessionId } = await params;
 
-  const [session, sessionRecord] = await Promise.all([
-    getServerSession(),
-    getSessionByIdCached(sessionId),
-  ]);
-
+  const session = await getServerSession();
   if (!session?.user) {
     redirect("/");
   }
+
+  const tenantId = session.activeTenantId;
+  const sessionRecord = await getSessionByIdCached(sessionId, tenantId);
 
   if (!sessionRecord) {
     notFound();

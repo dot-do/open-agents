@@ -20,10 +20,12 @@ export default async function SessionsLayout({
     redirect("/");
   }
 
+  const tenantId = session.activeTenantId;
+
   const [lastRepo, sessions, archivedCount] = await Promise.all([
     getLastRepoByUserId(session.user.id),
-    getSessionsWithUnreadByUserId(session.user.id, { status: "active" }),
-    getArchivedSessionCountByUserId(session.user.id),
+    getSessionsWithUnreadByUserId(session.user.id, { status: "active" }, tenantId),
+    getArchivedSessionCountByUserId(session.user.id, tenantId),
   ]);
 
   return (

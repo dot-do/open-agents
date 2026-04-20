@@ -46,6 +46,7 @@ export async function generateMetadata({
 }: SharedPageProps): Promise<Metadata> {
   const { shareId } = await params;
   const share = await getShareByIdCached(shareId);
+  // tenantId intentionally omitted — public share path scoped by share record.
   const sharedChat = share ? await getChatById(share.chatId) : null;
 
   return {
@@ -68,11 +69,14 @@ export default async function SharedPage({ params }: SharedPageProps) {
     notFound();
   }
 
+  // tenantId intentionally omitted — this is a public share path where access is
+  // scoped by the share record's chatId, not by tenant membership.
   const sharedChat = await getChatById(share.chatId);
   if (!sharedChat) {
     notFound();
   }
 
+  // tenantId intentionally omitted — public share path (see above).
   const session = await getSessionByIdCached(sharedChat.sessionId);
   if (!session) {
     notFound();

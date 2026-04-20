@@ -10,15 +10,13 @@ interface SessionPageProps {
 export default async function SessionPage({ params }: SessionPageProps) {
   const { sessionId } = await params;
 
-  const sessionPromise = getServerSession();
-  const sessionRecordPromise = getSessionByIdCached(sessionId);
-
-  const session = await sessionPromise;
+  const session = await getServerSession();
   if (!session?.user) {
     redirect("/");
   }
 
-  const sessionRecord = await sessionRecordPromise;
+  const tenantId = session.activeTenantId;
+  const sessionRecord = await getSessionByIdCached(sessionId, tenantId);
   if (!sessionRecord) {
     notFound();
   }

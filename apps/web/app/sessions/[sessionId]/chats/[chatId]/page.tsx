@@ -59,12 +59,13 @@ async function getInitialModels() {
 async function getChatByIdWithRetry(
   chatId: string,
   sessionId: string,
+  tenantId?: string,
 ): Promise<Awaited<ReturnType<typeof getChatById>>> {
   const maxAttempts = isOptimisticChatId(chatId)
     ? OPTIMISTIC_CHAT_RETRY_ATTEMPTS
     : 1;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const chat = await getChatById(chatId);
+    const chat = await getChatById(chatId, tenantId);
     if (chat && chat.sessionId === sessionId) {
       return chat;
     }
@@ -79,6 +80,8 @@ export async function generateMetadata({
   params,
 }: SessionChatPageProps): Promise<Metadata> {
   const { sessionId } = await params;
+  // generateMetadata has no auth session; tenantId is omitted intentionally here
+  // (the layout already gates access by ownership check).
   const sessionRecord = await getSessionByIdCached(sessionId);
 
   return {
@@ -92,18 +95,16 @@ export default async function SessionChatPage({
 }: SessionChatPageProps) {
   const { sessionId, chatId } = await params;
 
-  // Start independent fetches in parallel
-  const sessionPromise = getServerSession();
-  const sessionRecordPromise = getSessionByIdCached(sessionId);
-
   // Server-side auth check
-  const session = await sessionPromise;
+  const session = await getServerSession();
   if (!session?.user) {
     redirect("/");
   }
 
+  const tenantId = session.activeTenantId;
+
   // Fetch session record
-  const sessionRecord = await sessionRecordPromise;
+  const sessionRecord = await getSessionByIdCached(sessionId, tenantId);
   if (!sessionRecord) {
     notFound();
   }
@@ -118,7 +119,7 @@ export default async function SessionChatPage({
   // Fetch chat, messages, models, and preferences in parallel
   const [chat, dbMessages, initialModels, rawPreferences, sessionChats] =
     await Promise.all([
-      getChatByIdWithRetry(chatId, sessionId),
+      getChatByIdWithRetry(chatId, sessionId, tenantId),
       getChatMessages(chatId),
       getInitialModels(),
       getUserPreferences(session.user.id),
