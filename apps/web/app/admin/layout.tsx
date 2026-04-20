@@ -20,7 +20,7 @@ export default async function AdminLayout({
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       <header className="flex items-center justify-between border-b border-border px-6 py-3">
-        <div className="flex items-center gap-3">
+        <nav className="flex items-center gap-4">
           <Link
             href="/admin"
             className="text-sm font-semibold text-foreground hover:underline"
@@ -30,7 +30,20 @@ export default async function AdminLayout({
           <span className="text-xs uppercase tracking-wider text-muted-foreground">
             Cross-tenant ops
           </span>
-        </div>
+          <span className="text-border">|</span>
+          <Link
+            href="/admin/tenants"
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
+            Tenants
+          </Link>
+          <Link
+            href="/admin/webhooks"
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
+            Webhooks
+          </Link>
+        </nav>
         <Link
           href="/"
           className="text-sm text-muted-foreground hover:text-foreground"

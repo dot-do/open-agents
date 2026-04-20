@@ -1,0 +1,28 @@
+# Copy to terraform.tfvars and fill in real values.
+# Do NOT commit terraform.tfvars — it contains secrets.
+
+project_name    = "open-agents"
+vercel_api_token = "your-vercel-api-token"
+
+# "neon" (Terraform-managed) or "supabase" (manual)
+postgres_provider = "neon"
+neon_region        = "aws-us-east-1"
+
+# Custom domain (leave empty to skip)
+domain = ""
+
+# GitHub repo for Vercel git integration (owner/repo)
+github_repo = ""
+
+# GitHub App for platform integrations
+github_app_id          = ""
+github_app_private_key = ""
+
+# Stripe billing
+stripe_secret_key = ""
+
+# Cross-tenant admin user IDs (comma-separated)
+admin_user_ids = ""
+
+# Upstash Redis REST URL (provision at https://console.upstash.com)
+redis_url = ""
