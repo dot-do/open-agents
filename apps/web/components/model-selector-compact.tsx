@@ -19,6 +19,13 @@ import {
   CommandList,
 } from "@/components/ui/command";
 
+/**
+ * NOTE: modelOptions is expected to be pre-filtered by the server (/api/models
+ * applies plan-aware filtering via filterAllowedModels). This component does
+ * not fetch models independently, so no secondary leak of disallowed models
+ * is possible here. If a parent component ever adds models from a non-filtered
+ * source, those models must be filtered before being passed as props.
+ */
 interface ModelSelectorCompactProps {
   value: string;
   modelOptions: ModelOption[];
