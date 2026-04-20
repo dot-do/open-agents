@@ -223,3 +223,45 @@ The test cleans up everything it inserts in `afterAll`. A failure here
 indicates either a regression in `scopedQuery` or that the RLS policy
 for the affected table is missing / misconfigured.
 
+## 11. Local Stripe Testing
+
+Use the Stripe CLI to forward webhook events to your local dev server.
+
+### Install
+
+```sh
+brew install stripe/stripe-cli/stripe
+```
+
+### Login
+
+```sh
+stripe login
+```
+
+### Forward webhooks
+
+```sh
+stripe listen --forward-to localhost:3000/api/webhooks/stripe
+```
+
+The `stripe listen` command prints a webhook signing secret (`whsec_...`).
+Set it in your environment:
+
+```sh
+export STRIPE_WEBHOOK_SECRET=whsec_...
+```
+
+> **Note:** The `stripe listen` signing secret is different from your
+> production webhook secret configured in the Stripe Dashboard. Do not use
+> one in place of the other.
+
+### Trigger test events
+
+```sh
+stripe trigger checkout.session.completed
+```
+
+Other useful events: `customer.subscription.updated`,
+`customer.subscription.deleted`, `invoice.payment_succeeded`.
+

@@ -22,6 +22,7 @@ const PUBLIC_API_PREFIXES = [
   // performs its own session check so it can return a clean 401 rather than
   // the generic middleware 401. See /api/invite/[token]/route.ts.
   "/api/invite/",
+  "/api/health",
 ];
 
 function isPublicApi(pathname: string): boolean {

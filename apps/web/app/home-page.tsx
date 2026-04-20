@@ -86,7 +86,7 @@ export function HomePage({ hasSessionCookie, lastRepo }: HomePageProps) {
           <span className="text-lg font-semibold">Open Agents</span>
         </div>
         <div className="flex items-center gap-2 sm:justify-self-end">
-          <TenantSwitcher />
+          <TenantSwitcher showActiveName />
           <button
             type="button"
             onClick={() => setDrawerOpen(true)}

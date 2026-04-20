@@ -28,7 +28,11 @@ interface TenantsResponse {
   memberships: TenantMembership[];
 }
 
-export function TenantSwitcher() {
+interface TenantSwitcherProps {
+  showActiveName?: boolean;
+}
+
+export function TenantSwitcher({ showActiveName }: TenantSwitcherProps = {}) {
   const router = useRouter();
   const { data, isLoading, mutate } = useSWR<TenantsResponse>(
     "/api/tenants",
@@ -64,6 +68,11 @@ export function TenantSwitcher() {
 
   return (
     <>
+      {showActiveName && (
+        <span className="hidden text-sm font-medium text-foreground sm:inline-block max-w-[20ch] truncate">
+          {label}
+        </span>
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
