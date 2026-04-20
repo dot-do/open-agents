@@ -1,0 +1,587 @@
+openapi: "3.1.0"
+info:
+  title: Open Agents API
+  version: "1.0.0"
+  description: |
+    REST API for the Open Agents platform. Authenticate with a Personal Access
+    Token (Bearer) or a browser session cookie.
+servers:
+  - url: https://open-agents.dev
+    description: Production
+  - url: http://localhost:3000
+    description: Local development
+
+security:
+  - bearerAuth: []
+  - cookieAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Personal Access Token (PAT) issued from Settings > API Tokens.
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: oa_session
+      description: Browser session cookie set after OAuth sign-in.
+
+  schemas:
+    Tenant:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, slug, name]
+      example:
+        id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        slug: "my-team"
+        name: "My Team"
+        createdAt: "2025-01-15T08:00:00Z"
+        updatedAt: "2025-03-10T12:30:00Z"
+
+    Session:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        status:
+          type: string
+          enum: [active, stopped, error]
+        lifecycleState:
+          type: string
+          nullable: true
+          enum: [provisioning, active, restoring, stopped, null]
+        repoOwner:
+          type: string
+          nullable: true
+        repoName:
+          type: string
+          nullable: true
+        branch:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, title, status, createdAt]
+
+    ApiKey:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        hint:
+          type: string
+          description: Last 4 characters of the key for identification.
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, name, hint, createdAt]
+
+    Member:
+      type: object
+      properties:
+        userId:
+          type: string
+        role:
+          type: string
+          enum: [owner, admin, member, viewer]
+        email:
+          type: string
+          nullable: true
+        username:
+          type: string
+        name:
+          type: string
+          nullable: true
+      required: [userId, role, username]
+
+    Invite:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        role:
+          type: string
+          enum: [admin, member, viewer]
+        status:
+          type: string
+          enum: [pending, accepted, expired]
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, email, role, status, createdAt]
+
+    Webhook:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        url:
+          type: string
+          format: uri
+        events:
+          type: array
+          items:
+            type: string
+        active:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, url, events, active, createdAt]
+
+    AuditEvent:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        actorUserId:
+          type: string
+          nullable: true
+        action:
+          type: string
+        target:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, action, createdAt]
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+paths:
+  /api/tenants:
+    get:
+      summary: List tenants
+      description: Returns all tenants the authenticated user is a member of.
+      operationId: listTenants
+      tags: [Tenants]
+      responses:
+        "200":
+          description: Array of tenants.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenants:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Tenant"
+        "401":
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      summary: Create tenant
+      description: Create a new tenant. The authenticated user becomes the owner.
+      operationId: createTenant
+      tags: [Tenants]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                slug:
+                  type: string
+                  pattern: "^[a-z0-9-]+$"
+              required: [name, slug]
+            example:
+              name: "My Team"
+              slug: "my-team"
+      responses:
+        "201":
+          description: Tenant created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+        "400":
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/tenants/switch:
+    post:
+      summary: Switch active tenant
+      description: Set the active tenant for the current session.
+      operationId: switchTenant
+      tags: [Tenants]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tenantId:
+                  type: string
+                  format: uuid
+              required: [tenantId]
+      responses:
+        "200":
+          description: Active tenant updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        "403":
+          description: Not a member of the target tenant.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/sessions:
+    get:
+      summary: List sessions
+      description: Returns sessions for the active tenant.
+      operationId: listSessions
+      tags: [Sessions]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 25
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Array of sessions.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Session"
+    post:
+      summary: Create session
+      description: Start a new agent session.
+      operationId: createSession
+      tags: [Sessions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                repoOwner:
+                  type: string
+                repoName:
+                  type: string
+                branch:
+                  type: string
+              required: [title]
+      responses:
+        "201":
+          description: Session created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+
+  /api/tenant/api-keys:
+    get:
+      summary: List API keys
+      description: Returns API keys for the active tenant. Keys are shown as hints only.
+      operationId: listApiKeys
+      tags: [API Keys]
+      responses:
+        "200":
+          description: Array of API keys.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ApiKey"
+    post:
+      summary: Create API key
+      description: Generate a new API key for the active tenant. The full key is returned only once.
+      operationId: createApiKey
+      tags: [API Keys]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+              required: [name]
+      responses:
+        "201":
+          description: API key created. `key` is the full secret (shown once).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  name:
+                    type: string
+                  key:
+                    type: string
+                    description: Full API key value. Only returned on creation.
+                  hint:
+                    type: string
+
+  /api/tenant/api-keys/{id}:
+    delete:
+      summary: Delete API key
+      description: Revoke and delete an API key.
+      operationId: deleteApiKey
+      tags: [API Keys]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Key deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        "404":
+          description: Key not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/tenant/members:
+    get:
+      summary: List members
+      description: Returns all members of the active tenant.
+      operationId: listMembers
+      tags: [Members]
+      responses:
+        "200":
+          description: Array of members.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  members:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Member"
+
+  /api/tenant/invites:
+    get:
+      summary: List invites
+      description: Returns pending invites for the active tenant.
+      operationId: listInvites
+      tags: [Invites]
+      responses:
+        "200":
+          description: Array of invites.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invites:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Invite"
+    post:
+      summary: Create invite
+      description: Invite a user to the active tenant by email.
+      operationId: createInvite
+      tags: [Invites]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                role:
+                  type: string
+                  enum: [admin, member, viewer]
+                  default: member
+              required: [email]
+      responses:
+        "201":
+          description: Invite created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invite"
+
+  /api/tenant/webhooks:
+    get:
+      summary: List webhooks
+      description: Returns webhooks configured for the active tenant.
+      operationId: listWebhooks
+      tags: [Webhooks]
+      responses:
+        "200":
+          description: Array of webhooks.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  webhooks:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Webhook"
+    post:
+      summary: Create webhook
+      description: Register a new webhook endpoint.
+      operationId: createWebhook
+      tags: [Webhooks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url:
+                  type: string
+                  format: uri
+                events:
+                  type: array
+                  items:
+                    type: string
+                  description: Event types to subscribe to.
+              required: [url, events]
+      responses:
+        "201":
+          description: Webhook created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Webhook"
+
+  /api/audit:
+    get:
+      summary: List audit events
+      description: Returns recent audit events for the active tenant.
+      operationId: listAuditEvents
+      tags: [Audit]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: Pagination cursor (audit event ID).
+      responses:
+        "200":
+          description: Array of audit events.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AuditEvent"
+                  nextCursor:
+                    type: string
+                    nullable: true
+
+  /api/health:
+    get:
+      summary: Health check
+      description: Returns service health status. No authentication required.
+      operationId: healthCheck
+      tags: [System]
+      security: []
+      responses:
+        "200":
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  timestamp:
+                    type: string
+                    format: date-time
+              example:
+                ok: true
+                timestamp: "2025-06-15T10:30:00Z"

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { use, useState } from "react";
+import { use, useCallback, useState } from "react";
 import useSWR from "swr";
 import { Button } from "@/components/ui/button";
 import {
@@ -48,6 +48,16 @@ type AuditRow = {
   metadata: unknown;
   createdAt: string;
 };
+type UsageDayPoint = {
+  date: string;
+  sandboxMinutes: number;
+  costCents: number;
+};
+type UsageData = {
+  daily: UsageDayPoint[];
+  totals: { sandboxMinutes: number; costCents: number; days: number };
+};
+
 type TenantDetail = {
   tenant: {
     id: string;
@@ -224,6 +234,7 @@ export default function AdminTenantDetailPage({
           </TabsTrigger>
           <TabsTrigger value="audit">Audit ({recentAudit.length})</TabsTrigger>
           <TabsTrigger value="quotas">Quotas</TabsTrigger>
+          <TabsTrigger value="usage">Usage</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4 pt-4">
@@ -405,6 +416,10 @@ export default function AdminTenantDetailPage({
             />
           </dl>
         </TabsContent>
+
+        <TabsContent value="usage" className="pt-4">
+          <UsageTab tenantId={id} tenantSlug={tenant.slug} />
+        </TabsContent>
       </Tabs>
     </div>
   );
@@ -426,6 +441,132 @@ function Row({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
     <div className="flex justify-between gap-4 border-b border-border/60 py-1.5">
       <dt className="text-muted-foreground">{k}</dt>
       <dd className={mono ? "font-mono text-xs" : ""}>{v}</dd>
+    </div>
+  );
+}
+
+function UsageTab({
+  tenantId,
+  tenantSlug,
+}: {
+  tenantId: string;
+  tenantSlug: string;
+}) {
+  const { data, isLoading, error } = useSWR<UsageData>(
+    `/api/admin/tenants/${tenantId}/usage`,
+    fetcher,
+  );
+  const [exporting, setExporting] = useState(false);
+
+  const onExport = useCallback(async () => {
+    setExporting(true);
+    try {
+      const res = await fetch(
+        `/api/admin/tenants/${tenantId}/export-usage?format=csv`,
+      );
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `tenant-usage-${tenantSlug}-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
+  }, [tenantId, tenantSlug]);
+
+  if (isLoading) {
+    return <p className="text-sm text-muted-foreground">Loading usage...</p>;
+  }
+  if (error || !data) {
+    return (
+      <p className="text-sm text-destructive">
+        Failed to load usage data.
+      </p>
+    );
+  }
+
+  const { daily, totals } = data;
+
+  return (
+    <div className="space-y-6">
+      {/* Period stats */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <Stat label="Total minutes (30d)" value={totals.sandboxMinutes} />
+        <Stat
+          label="Total cost (30d)"
+          value={`$${(totals.costCents / 100).toFixed(2)}`}
+        />
+        <Stat label="Days with data" value={totals.days} />
+      </div>
+
+      {/* Bar chart */}
+      <div>
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="text-sm font-medium text-muted-foreground">
+            Daily sandbox minutes — last 30 days
+          </h3>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onExport}
+            disabled={exporting}
+          >
+            {exporting ? "Exporting..." : "Export CSV"}
+          </Button>
+        </div>
+        <UsageBarChart points={daily} />
+      </div>
+    </div>
+  );
+}
+
+function UsageBarChart({ points }: { points: UsageDayPoint[] }) {
+  if (points.length === 0) {
+    return (
+      <div className="rounded-md border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
+        No usage recorded in the last 30 days.
+      </div>
+    );
+  }
+
+  const maxMinutes = Math.max(1, ...points.map((p) => p.sandboxMinutes));
+  const chartHeight = 96;
+
+  return (
+    <div className="space-y-3">
+      <svg
+        viewBox={`0 0 ${points.length * 12} ${chartHeight}`}
+        className="w-full"
+        preserveAspectRatio="none"
+        aria-label="Usage bar chart"
+      >
+        {points.map((p, i) => {
+          const h = Math.max(1, (p.sandboxMinutes / maxMinutes) * chartHeight);
+          return (
+            <rect
+              key={p.date}
+              x={i * 12 + 1}
+              y={chartHeight - h}
+              width={10}
+              height={h}
+              rx={2}
+              className="fill-foreground/60 hover:fill-foreground"
+            >
+              <title>
+                {p.date}: {p.sandboxMinutes} min, $
+                {(p.costCents / 100).toFixed(2)}
+              </title>
+            </rect>
+          );
+        })}
+      </svg>
+      <div className="flex justify-between text-xs text-muted-foreground">
+        <span>{points[0]?.date}</span>
+        <span>{points[points.length - 1]?.date}</span>
+      </div>
     </div>
   );
 }
