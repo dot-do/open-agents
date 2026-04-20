@@ -75,11 +75,12 @@ export function resolvePullRequestAppBaseUrl(
 export async function resolvePullRequestContextSection(params: {
   sessionId: string;
   appBaseUrl?: string;
+  tenantId?: string;
 }): Promise<string> {
-  const { sessionId, appBaseUrl } = params;
+  const { sessionId, appBaseUrl, tenantId } = params;
   const [sessionRecord, chats] = await Promise.all([
     getSessionById(sessionId),
-    getChatsBySessionId(sessionId),
+    getChatsBySessionId(sessionId, tenantId),
   ]);
   const parts: string[] = [];
   const latestChatId = chats[0]?.id;
@@ -146,6 +147,7 @@ export interface GeneratePullRequestContentParams {
   branchName: string;
   baseRef?: string;
   appBaseUrl?: string;
+  tenantId?: string;
 }
 
 export type GeneratePullRequestContentResult =
@@ -289,10 +291,11 @@ export async function generatePullRequestContentFromSandbox(
   }
 
   const [conversationContext, pullRequestContextSection] = await Promise.all([
-    getConversationContext(sessionId),
+    getConversationContext(sessionId, params.tenantId),
     resolvePullRequestContextSection({
       sessionId,
       appBaseUrl: params.appBaseUrl,
+      tenantId: params.tenantId,
     }),
   ]);
   const conversationSection = conversationContext

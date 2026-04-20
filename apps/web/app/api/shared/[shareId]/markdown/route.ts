@@ -192,6 +192,7 @@ export async function GET(request: Request, context: RouteContext) {
       ? `https://github.com/${repo}/pull/${session.prNumber}`
       : null;
 
+  // Intentionally unscoped: shared links are public and not tenant-bound.
   const dbMessages = await getChatMessages(sharedChat.id);
   const messages: MarkdownMessage[] = dbMessages.map((messageRow, index) => {
     const message = redactSharedEnvContent(

@@ -77,7 +77,7 @@ export async function POST(req: Request, context: RouteContext) {
   }
 
   if (result.status === "inserted") {
-    await updateChatAssistantActivity(chatId, new Date());
+    await updateChatAssistantActivity(chatId, new Date(), authResult.tenantId);
   }
 
   return Response.json({ success: true, status: result.status });

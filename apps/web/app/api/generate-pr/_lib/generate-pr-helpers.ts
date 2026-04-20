@@ -209,14 +209,15 @@ export async function ensureForkExists({
  */
 export async function getConversationContext(
   sessionId: string,
+  tenantId?: string,
 ): Promise<string> {
-  const chats = await getChatsBySessionId(sessionId);
+  const chats = await getChatsBySessionId(sessionId, tenantId);
   if (chats.length === 0) return "";
 
   const lines: string[] = [];
 
   for (const chat of chats) {
-    const messages = await getChatMessages(chat.id);
+    const messages = await getChatMessages(chat.id, tenantId);
     for (const message of messages) {
       if (!Array.isArray(message.parts)) continue;
 

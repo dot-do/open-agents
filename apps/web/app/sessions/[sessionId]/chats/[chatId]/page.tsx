@@ -120,7 +120,7 @@ export default async function SessionChatPage({
   const [chat, dbMessages, initialModels, rawPreferences, sessionChats] =
     await Promise.all([
       getChatByIdWithRetry(chatId, sessionId, tenantId),
-      getChatMessages(chatId),
+      getChatMessages(chatId, tenantId),
       getInitialModels(),
       getUserPreferences(session.user.id),
       getChatSummariesBySessionId(sessionId, session.user.id),

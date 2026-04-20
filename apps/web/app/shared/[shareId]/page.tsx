@@ -92,6 +92,7 @@ export default async function SharedPage({ params }: SharedPageProps) {
     },
   });
 
+  // Intentionally unscoped: shared links are public and not tenant-bound.
   const dbMessages = await getChatMessages(sharedChat.id);
 
   // Build messages with timing: compute duration for each assistant message

@@ -145,6 +145,8 @@ export function getLifecycleDueAtMs(source: LifecycleTimingSource): number {
   return Math.min(inactivityDueAtMs, expiryDueAtMs);
 }
 
+// Intentionally unscoped: sandbox lifecycle operates at the infrastructure
+// level and is not tenant-bound (the session ID already scopes the lookup).
 async function hasActiveStreamForSession(sessionId: string): Promise<boolean> {
   const chatsInSession = await getChatsBySessionId(sessionId);
   return chatsInSession.some((chat) => chat.activeStreamId !== null);

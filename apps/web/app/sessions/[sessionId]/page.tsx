@@ -25,7 +25,7 @@ export default async function SessionPage({ params }: SessionPageProps) {
     redirect("/");
   }
 
-  const chats = await getChatsBySessionId(sessionId);
+  const chats = await getChatsBySessionId(sessionId, tenantId);
   const targetChat = chats[0];
 
   if (!targetChat) {
