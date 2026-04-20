@@ -3,7 +3,7 @@
 import { History } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { SignedOutHero } from "@/components/auth/signed-out-hero";
+import { LandingPage } from "@/components/landing-page";
 import { HomeSkeleton } from "@/components/home-skeleton";
 import { ImpersonationBanner } from "@/components/impersonation-banner";
 import type { SandboxType } from "@/components/sandbox-selector-compact";
@@ -75,7 +75,7 @@ export function HomePage({ hasSessionCookie, lastRepo }: HomePageProps) {
   }
 
   if (!isAuthenticated) {
-    return <SignedOutHero />;
+    return <LandingPage />;
   }
 
   return (
