@@ -262,6 +262,29 @@ export async function POST(req: Request) {
     }
   }
 
+  // Plan-gated model access: reject early if the model is not included in
+  // the tenant's plan and no BYO key exists for the provider.
+  if (tenantId) {
+    try {
+      const { assertModelAllowed } = await import("@/lib/model-gate");
+      await assertModelAllowed({ tenantId }, mainModelSelection.id);
+    } catch (error) {
+      const { PlanUpgradeRequired } = await import("@/lib/billing");
+      if (error instanceof PlanUpgradeRequired) {
+        return Response.json(
+          {
+            error: "plan_upgrade_required",
+            feature: error.feature,
+            upgrade_url: "/settings/billing",
+          },
+          { status: 402 },
+        );
+      }
+      // Non-gate errors are best-effort: log and continue.
+      console.warn("[model-gate] pre-flight failed:", error);
+    }
+  }
+
   // Start the durable workflow
   const run = await start(runAgentWorkflow, [
     {

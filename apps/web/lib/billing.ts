@@ -29,13 +29,59 @@ export type Plan = "free" | "pro" | "team" | "enterprise";
 export type PlanFeature =
   | "concurrent_sandboxes"
   | "byo_keys"
-  | "sso";
+  | "sso"
+  | `model:${string}`;
 
 /**
  * Plan matrix — single source of truth. Keep in sync with marketing pages.
  * `concurrent_sandboxes: number | 'custom'` — `custom` means "negotiated
  * at enterprise onboarding", gate passes unconditionally.
  */
+/**
+ * Model-tier sets for plan-gated model access.
+ *
+ * `free` — affordable models only (haiku, gpt-4o-mini, gpt-5-mini, gemini flash).
+ * `standard` — adds mid-tier models (sonnet, gpt-4o, gpt-5, gemini pro, grok).
+ * `all` — everything including premium models (opus).
+ *
+ * Model IDs use prefix matching so new point-versions are automatically included.
+ */
+export type ModelTier = "free" | "standard" | "all";
+
+/** Lowercased model-id prefixes included in each tier (cumulative). */
+const FREE_MODEL_PREFIXES = [
+  "anthropic/claude-haiku",
+  "openai/gpt-4o-mini",
+  "openai/gpt-5-mini",
+  "google/gemini-2.0-flash",
+  "google/gemini-1.5-flash",
+] as const;
+
+const STANDARD_MODEL_PREFIXES = [
+  ...FREE_MODEL_PREFIXES,
+  "anthropic/claude-sonnet",
+  "openai/gpt-4o",
+  "openai/gpt-5",
+  "google/gemini-1.5-pro",
+  "google/gemini-2.5-pro",
+  "xai/grok",
+] as const;
+
+/**
+ * Check whether a model id matches a tier's allowed prefixes.
+ * Tier `"all"` permits everything.
+ */
+export function isModelAllowedByTier(
+  modelId: string,
+  tier: ModelTier,
+): boolean {
+  if (tier === "all") return true;
+  const prefixes =
+    tier === "standard" ? STANDARD_MODEL_PREFIXES : FREE_MODEL_PREFIXES;
+  const lowered = modelId.toLowerCase();
+  return prefixes.some((p) => lowered.startsWith(p));
+}
+
 export const PLAN_MATRIX: Record<
   Plan,
   {
@@ -48,6 +94,8 @@ export const PLAN_MATRIX: Record<
      * the sustained rate within the same 60s sliding window.
      */
     rateLimit: { rpm: number; burst: number };
+    /** Which model tier the plan includes. */
+    models: ModelTier;
   }
 > = {
   free: {
@@ -55,24 +103,28 @@ export const PLAN_MATRIX: Record<
     byo_keys: false,
     sso: false,
     rateLimit: { rpm: 60, burst: 30 },
+    models: "free",
   },
   pro: {
     concurrent_sandboxes: 3,
     byo_keys: true,
     sso: false,
     rateLimit: { rpm: 600, burst: 120 },
+    models: "standard",
   },
   team: {
     concurrent_sandboxes: 10,
     byo_keys: true,
     sso: false,
     rateLimit: { rpm: 3000, burst: 500 },
+    models: "all",
   },
   enterprise: {
     concurrent_sandboxes: "custom",
     byo_keys: true,
     sso: true,
     rateLimit: { rpm: 10000, burst: 2000 },
+    models: "all",
   },
 };
 
