@@ -267,6 +267,13 @@
       "when": 1776691548503,
       "tag": "0037_special_korath",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1776694783103,
+      "tag": "0038_safe_eternals",
+      "breakpoints": true
     }
   ]
 }

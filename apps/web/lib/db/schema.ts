@@ -36,6 +36,8 @@ export const tenants = pgTable(
     id: text("id").primaryKey(),
     slug: text("slug").notNull().unique(),
     name: text("name").notNull(),
+    logoUrl: text("logo_url"),
+    description: text("description"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -878,4 +880,37 @@ export const tenantQuotaAlerts = pgTable(
 
 export type TenantQuotaAlert = typeof tenantQuotaAlerts.$inferSelect;
 export type NewTenantQuotaAlert = typeof tenantQuotaAlerts.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Custom domains — tenant-scoped vanity domains with DNS TXT verification.
+// Actual Vercel domain provisioning is infrastructure-level and NOT handled
+// by this table; see apps/web/lib/custom-domains.ts for the verification
+// service and middleware.ts for routing notes.
+// ---------------------------------------------------------------------------
+export const tenantCustomDomains = pgTable(
+  "tenant_custom_domains",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    domain: text("domain").notNull().unique(),
+    verificationToken: text("verification_token").notNull(),
+    verified: boolean("verified").notNull().default(false),
+    verifiedAt: timestamp("verified_at"),
+    sslStatus: text("ssl_status", {
+      enum: ["pending", "active", "error"],
+    })
+      .notNull()
+      .default("pending"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("tenant_custom_domains_tenant_idx").on(table.tenantId),
+  ],
+);
+
+export type TenantCustomDomain = typeof tenantCustomDomains.$inferSelect;
+export type NewTenantCustomDomain = typeof tenantCustomDomains.$inferInsert;
 

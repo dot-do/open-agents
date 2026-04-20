@@ -82,6 +82,24 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
+// ---------------------------------------------------------------------------
+// Custom domain routing (not yet implemented — requires Vercel domain config)
+// ---------------------------------------------------------------------------
+// When custom domains are enabled at the infrastructure level, the middleware
+// would check the Host header against verified custom domains:
+//
+//   1. Extract `req.headers.get("host")` (strip port if present).
+//   2. Skip if the host matches the primary app domain (e.g. *.open-agents.com).
+//   3. Call `lookupTenantByDomain(host)` from `@/lib/custom-domains`.
+//   4. If a tenantId is returned, set `x-tenant-id` on the request headers
+//      so downstream `requireTenantCtx` resolves the correct tenant context
+//      without requiring the user to have switched tenants in their session.
+//   5. If no match, return 404 or redirect to the primary domain.
+//
+// This requires Vercel wildcard/custom domain configuration and cannot be
+// implemented purely in application code. See the custom domains feature spec.
+// ---------------------------------------------------------------------------
+
 export const config = {
   // Only run on /api/*. Static assets, app pages, and OAuth redirects bypass
   // the matcher entirely.
