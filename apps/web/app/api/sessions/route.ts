@@ -13,6 +13,7 @@ import {
 } from "@/lib/db/vercel-project-links";
 import { getUserPreferences } from "@/lib/db/user-preferences";
 import { sanitizeUserPreferencesForSession } from "@/lib/model-access";
+import { getTemplateById } from "@/lib/session-templates-lookup";
 import {
   isValidGitHubRepoName,
   isValidGitHubRepoOwner,
@@ -44,6 +45,7 @@ interface CreateSessionRequest {
   autoCommitPush?: boolean;
   autoCreatePr?: boolean;
   vercelProject?: VercelProjectSelection | null;
+  templateId?: string;
 }
 
 function generateBranchName(username: string, name?: string | null): string {
@@ -348,9 +350,21 @@ export async function POST(req: Request) {
       session,
       req.url,
     );
+
+    // Resolve template defaults if templateId is provided
+    const template = body.templateId && postTenantId
+      ? await getTemplateById(postTenantId, body.templateId)
+      : null;
+
     const effectiveAutoCommitPush =
       autoCommitPush ?? preferences.autoCommitPush;
     const effectiveAutoCreatePr = autoCreatePr ?? preferences.autoCreatePr;
+
+    // Template overrides: modelId and skillRefs from template take precedence
+    // over user preferences when a template is selected.
+    const effectiveModelId = template?.modelId ?? preferences.defaultModelId;
+    const effectiveSkillRefs = template?.skillRefs ?? preferences.globalSkillRefs;
+
     const result = await createSessionWithInitialChat({
       session: {
         id: nanoid(),
@@ -371,7 +385,7 @@ export async function POST(req: Request) {
         autoCreatePrOverride: effectiveAutoCommitPush
           ? effectiveAutoCreatePr
           : false,
-        globalSkillRefs: preferences.globalSkillRefs,
+        globalSkillRefs: effectiveSkillRefs,
         sandboxState: { type: sandboxType },
         lifecycleState: "provisioning",
         lifecycleVersion: 0,
@@ -379,7 +393,7 @@ export async function POST(req: Request) {
       initialChat: {
         id: nanoid(),
         title: "New chat",
-        modelId: preferences.defaultModelId,
+        modelId: effectiveModelId,
       },
     });
 

@@ -281,6 +281,13 @@
       "when": 1776695264570,
       "tag": "0039_material_ultimo",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1776695497227,
+      "tag": "0040_volatile_energizer",
+      "breakpoints": true
     }
   ]
 }
