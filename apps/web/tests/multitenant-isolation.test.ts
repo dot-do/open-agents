@@ -54,6 +54,24 @@ describeMaybe("multitenant data isolation (e2e)", () => {
   const auditA = { id: `aud-a-${suffix}` };
   const auditB = { id: `aud-b-${suffix}` };
 
+  // Wave 6 test data ids
+  const workflowRunA = { id: `wfr-a-${suffix}` };
+  const workflowRunB = { id: `wfr-b-${suffix}` };
+  const usageA = { id: `usg-a-${suffix}` };
+  const usageB = { id: `usg-b-${suffix}` };
+  const webhookA = { id: `whk-a-${suffix}` };
+  const webhookB = { id: `whk-b-${suffix}` };
+  const inviteA = { id: `inv-a-${suffix}` };
+  const inviteB = { id: `inv-b-${suffix}` };
+  const alertA = { id: `alt-a-${suffix}` };
+  const alertB = { id: `alt-b-${suffix}` };
+  const tokenA = { id: `tok-a-${suffix}` };
+  const tokenB = { id: `tok-b-${suffix}` };
+  const msgA = { id: `msg-a-${suffix}` };
+  const msgB = { id: `msg-b-${suffix}` };
+  const prefA = { id: `prf-a-${suffix}` };
+  const prefB = { id: `prf-b-${suffix}` };
+
   beforeAll(async () => {
     mod = {
       schema: await import("@/lib/db/schema"),
@@ -165,12 +183,221 @@ describeMaybe("multitenant data isolation (e2e)", () => {
         action: "test.create",
       },
     ]);
+
+    // Chat messages
+    await db.insert(s.chatMessages).values([
+      {
+        id: msgA.id,
+        chatId: chatA.id,
+        tenantId: tenantA.id,
+        role: "user",
+        parts: JSON.stringify([{ type: "text", text: "hello from A" }]),
+      },
+      {
+        id: msgB.id,
+        chatId: chatB.id,
+        tenantId: tenantB.id,
+        role: "user",
+        parts: JSON.stringify([{ type: "text", text: "hello from B" }]),
+      },
+    ]);
+
+    // Workflow runs
+    const now = new Date();
+    await db.insert(s.workflowRuns).values([
+      {
+        id: workflowRunA.id,
+        chatId: chatA.id,
+        sessionId: sessionA.id,
+        userId: userA.id,
+        tenantId: tenantA.id,
+        status: "completed",
+        startedAt: now,
+        finishedAt: now,
+        totalDurationMs: 100,
+      },
+      {
+        id: workflowRunB.id,
+        chatId: chatB.id,
+        sessionId: sessionB.id,
+        userId: userB.id,
+        tenantId: tenantB.id,
+        status: "completed",
+        startedAt: now,
+        finishedAt: now,
+        totalDurationMs: 200,
+      },
+    ]);
+
+    // Usage events
+    await db.insert(s.usageEvents).values([
+      {
+        id: usageA.id,
+        userId: userA.id,
+        tenantId: tenantA.id,
+        provider: "anthropic",
+        modelId: "claude-3",
+        inputTokens: 100,
+        outputTokens: 50,
+      },
+      {
+        id: usageB.id,
+        userId: userB.id,
+        tenantId: tenantB.id,
+        provider: "anthropic",
+        modelId: "claude-3",
+        inputTokens: 200,
+        outputTokens: 75,
+      },
+    ]);
+
+    // Webhooks
+    await db.insert(s.tenantWebhooks).values([
+      {
+        id: webhookA.id,
+        tenantId: tenantA.id,
+        url: "https://a.example.com/hook",
+        secret: "secret-a",
+        events: ["session.completed"],
+      },
+      {
+        id: webhookB.id,
+        tenantId: tenantB.id,
+        url: "https://b.example.com/hook",
+        secret: "secret-b",
+        events: ["session.completed"],
+      },
+    ]);
+
+    // Invites
+    const future = new Date(Date.now() + 86400000);
+    await db.insert(s.tenantInvites).values([
+      {
+        id: inviteA.id,
+        tenantId: tenantA.id,
+        email: "invite-a@example.com",
+        role: "member",
+        token: `tok-inv-a-${suffix}`,
+        invitedByUserId: userA.id,
+        expiresAt: future,
+      },
+      {
+        id: inviteB.id,
+        tenantId: tenantB.id,
+        email: "invite-b@example.com",
+        role: "member",
+        token: `tok-inv-b-${suffix}`,
+        invitedByUserId: userB.id,
+        expiresAt: future,
+      },
+    ]);
+
+    // Quota alerts
+    await db.insert(s.tenantQuotaAlerts).values([
+      {
+        id: alertA.id,
+        tenantId: tenantA.id,
+        kind: "daily_cost",
+        threshold: 80,
+        periodKey: "2026-04-15",
+      },
+      {
+        id: alertB.id,
+        tenantId: tenantB.id,
+        kind: "daily_cost",
+        threshold: 80,
+        periodKey: "2026-04-15",
+      },
+    ]);
+
+    // API tokens (PAT)
+    await db.insert(s.tenantApiTokens).values([
+      {
+        id: tokenA.id,
+        tenantId: tenantA.id,
+        name: "token-A",
+        tokenHash: `hash-a-${suffix}`,
+        tokenHint: "aaaa",
+        scope: "read",
+        createdByUserId: userA.id,
+      },
+      {
+        id: tokenB.id,
+        tenantId: tenantB.id,
+        name: "token-B",
+        tokenHash: `hash-b-${suffix}`,
+        tokenHint: "bbbb",
+        scope: "read",
+        createdByUserId: userB.id,
+      },
+    ]);
+
+    // Vercel project links
+    await db.insert(s.vercelProjectLinks).values([
+      {
+        userId: userA.id,
+        tenantId: tenantA.id,
+        repoOwner: "owner-a",
+        repoName: `repo-a-${suffix}`,
+        projectId: `proj-a-${suffix}`,
+        projectName: "proj-a",
+      },
+      {
+        userId: userB.id,
+        tenantId: tenantB.id,
+        repoOwner: "owner-b",
+        repoName: `repo-b-${suffix}`,
+        projectId: `proj-b-${suffix}`,
+        projectName: "proj-b",
+      },
+    ]);
+
+    // User preferences (user-scoped but has tenantId column)
+    await db.insert(s.userPreferences).values([
+      {
+        id: prefA.id,
+        userId: userA.id,
+        tenantId: tenantA.id,
+      },
+      {
+        id: prefB.id,
+        userId: userB.id,
+        tenantId: tenantB.id,
+      },
+    ]);
   });
 
   afterAll(async () => {
     if (!mod) return;
     const s = mod.schema;
-    // Delete in FK-safe order.
+    // Delete in FK-safe order (children first).
+    await db.delete(s.userPreferences).where(
+      sql`${s.userPreferences.id} in (${prefA.id}, ${prefB.id})`,
+    );
+    await db.delete(s.vercelProjectLinks).where(
+      sql`${s.vercelProjectLinks.tenantId} in (${tenantA.id}, ${tenantB.id})`,
+    );
+    await db.delete(s.tenantApiTokens).where(
+      sql`${s.tenantApiTokens.id} in (${tokenA.id}, ${tokenB.id})`,
+    );
+    await db.delete(s.tenantQuotaAlerts).where(
+      sql`${s.tenantQuotaAlerts.id} in (${alertA.id}, ${alertB.id})`,
+    );
+    await db.delete(s.tenantInvites).where(
+      sql`${s.tenantInvites.id} in (${inviteA.id}, ${inviteB.id})`,
+    );
+    await db.delete(s.tenantWebhooks).where(
+      sql`${s.tenantWebhooks.id} in (${webhookA.id}, ${webhookB.id})`,
+    );
+    await db.delete(s.usageEvents).where(
+      sql`${s.usageEvents.id} in (${usageA.id}, ${usageB.id})`,
+    );
+    await db.delete(s.workflowRuns).where(
+      sql`${s.workflowRuns.id} in (${workflowRunA.id}, ${workflowRunB.id})`,
+    );
+    await db.delete(s.chatMessages).where(
+      sql`${s.chatMessages.id} in (${msgA.id}, ${msgB.id})`,
+    );
     await db.delete(s.auditEvents).where(
       sql`${s.auditEvents.tenantId} in (${tenantA.id}, ${tenantB.id})`,
     );
@@ -197,141 +424,463 @@ describeMaybe("multitenant data isolation (e2e)", () => {
       .where(sql`${s.tenants.id} in (${tenantA.id}, ${tenantB.id})`);
   });
 
-  test("scopedQuery: A sees only A's rows across all tenant-scoped tables", async () => {
-    const s = mod.schema;
-    const ctxA = { tenantId: tenantA.id };
-    const scoped = mod.guard.scopedQuery(ctxA);
+  // -----------------------------------------------------------------------
+  // Original scopedQuery + RLS tests
+  // -----------------------------------------------------------------------
 
-    const tables = [
-      s.sessions,
-      s.chats,
-      s.tenantApiKeys,
-      s.githubInstallations,
-      s.auditEvents,
-    ];
-    for (const t of tables) {
-      const rows = (await scoped.selectFrom(t)) as unknown as Array<{
-        tenantId: string | null;
-      }>;
-      expect(rows.length).toBeGreaterThanOrEqual(1);
-      for (const r of rows) {
-        expect(r.tenantId).toBe(tenantA.id);
+  describe("scopedQuery basics", () => {
+    test("A sees only A's rows across all tenant-scoped tables", async () => {
+      const s = mod.schema;
+      const ctxA = { tenantId: tenantA.id };
+      const scoped = mod.guard.scopedQuery(ctxA);
+
+      const tables = [
+        s.sessions,
+        s.chats,
+        s.tenantApiKeys,
+        s.githubInstallations,
+        s.auditEvents,
+      ];
+      for (const t of tables) {
+        const rows = (await scoped.selectFrom(t)) as unknown as Array<{
+          tenantId: string | null;
+        }>;
+        expect(rows.length).toBeGreaterThanOrEqual(1);
+        for (const r of rows) {
+          expect(r.tenantId).toBe(tenantA.id);
+        }
       }
-    }
-  });
+    });
 
-  test("scopedQuery: B sees only B's rows", async () => {
-    const s = mod.schema;
-    const ctxB = { tenantId: tenantB.id };
-    const scoped = mod.guard.scopedQuery(ctxB);
-    const tables = [
-      s.sessions,
-      s.chats,
-      s.tenantApiKeys,
-      s.githubInstallations,
-      s.auditEvents,
-    ];
-    for (const t of tables) {
-      const rows = (await scoped.selectFrom(t)) as unknown as Array<{
-        tenantId: string | null;
-      }>;
-      for (const r of rows) {
-        expect(r.tenantId).toBe(tenantB.id);
+    test("B sees only B's rows", async () => {
+      const s = mod.schema;
+      const ctxB = { tenantId: tenantB.id };
+      const scoped = mod.guard.scopedQuery(ctxB);
+      const tables = [
+        s.sessions,
+        s.chats,
+        s.tenantApiKeys,
+        s.githubInstallations,
+        s.auditEvents,
+      ];
+      for (const t of tables) {
+        const rows = (await scoped.selectFrom(t)) as unknown as Array<{
+          tenantId: string | null;
+        }>;
+        for (const r of rows) {
+          expect(r.tenantId).toBe(tenantB.id);
+        }
       }
-    }
-  });
+    });
 
-  test("scopedQuery update: A cannot update B's session", async () => {
-    const s = mod.schema;
-    const scopedA = mod.guard.scopedQuery({ tenantId: tenantA.id });
-    const result = (await scopedA.updateSet(
-      s.sessions,
-      eq(s.sessions.id, sessionB.id),
-      { title: "pwned-by-A" },
-    )) as unknown as { count?: number };
-    // postgres-js returns a result with .count === 0 when no rows match.
-    expect(result.count ?? 0).toBe(0);
+    test("scopedQuery update: A cannot update B's session", async () => {
+      const s = mod.schema;
+      const scopedA = mod.guard.scopedQuery({ tenantId: tenantA.id });
+      const result = (await scopedA.updateSet(
+        s.sessions,
+        eq(s.sessions.id, sessionB.id),
+        { title: "pwned-by-A" },
+      )) as unknown as { count?: number };
+      expect(result.count ?? 0).toBe(0);
 
-    // Verify via raw query that B's session title is unchanged.
-    const rows = await db
-      .select({ title: s.sessions.title })
-      .from(s.sessions)
-      .where(eq(s.sessions.id, sessionB.id));
-    expect(rows[0]?.title).toBe("B-session");
-  });
-
-  test("scopedQuery delete: A cannot delete B's chat", async () => {
-    const s = mod.schema;
-    const scopedA = mod.guard.scopedQuery({ tenantId: tenantA.id });
-    const result = (await scopedA.deleteFrom(
-      s.chats,
-      eq(s.chats.id, chatB.id),
-    )) as unknown as { count?: number };
-    expect(result.count ?? 0).toBe(0);
-
-    const rows = await db
-      .select({ id: s.chats.id })
-      .from(s.chats)
-      .where(eq(s.chats.id, chatB.id));
-    expect(rows.length).toBe(1);
-  });
-
-  test("RLS: transaction primed with tenant A sees only A's sessions", async () => {
-    const s = mod.schema;
-    await db.transaction(async (tx: unknown) => {
-      await mod.rls.setTenantContext(
-        tx as { execute: (q: unknown) => Promise<unknown> },
-        tenantA.id,
-      );
-      // biome-ignore lint/suspicious/noExplicitAny: tx type
-      const rows = (await (tx as any)
-        .select()
-        .from(s.sessions)) as Array<{ tenantId: string | null }>;
-      expect(rows.length).toBeGreaterThanOrEqual(1);
-      for (const r of rows) {
-        expect(r.tenantId).toBe(tenantA.id);
-      }
-      // Neither A-primed tx sees B's session even by direct id lookup.
-      // biome-ignore lint/suspicious/noExplicitAny: tx type
-      const byId = await (tx as any)
-        .select()
+      const rows = await db
+        .select({ title: s.sessions.title })
         .from(s.sessions)
         .where(eq(s.sessions.id, sessionB.id));
-      expect(byId.length).toBe(0);
+      expect(rows[0]?.title).toBe("B-session");
+    });
+
+    test("scopedQuery delete: A cannot delete B's chat", async () => {
+      const s = mod.schema;
+      const scopedA = mod.guard.scopedQuery({ tenantId: tenantA.id });
+      const result = (await scopedA.deleteFrom(
+        s.chats,
+        eq(s.chats.id, chatB.id),
+      )) as unknown as { count?: number };
+      expect(result.count ?? 0).toBe(0);
+
+      const rows = await db
+        .select({ id: s.chats.id })
+        .from(s.chats)
+        .where(eq(s.chats.id, chatB.id));
+      expect(rows.length).toBe(1);
     });
   });
 
-  test("RLS: transaction primed with tenant B sees only B's sessions", async () => {
-    const s = mod.schema;
-    await db.transaction(async (tx: unknown) => {
-      await mod.rls.setTenantContext(
-        tx as { execute: (q: unknown) => Promise<unknown> },
-        tenantB.id,
-      );
-      // biome-ignore lint/suspicious/noExplicitAny: tx type
-      const rows = (await (tx as any)
-        .select()
-        .from(s.sessions)) as Array<{ tenantId: string | null }>;
+  // -----------------------------------------------------------------------
+  // RLS
+  // -----------------------------------------------------------------------
+
+  describe("RLS transaction isolation", () => {
+    test("transaction primed with tenant A sees only A's sessions", async () => {
+      const s = mod.schema;
+      await db.transaction(async (tx: unknown) => {
+        await mod.rls.setTenantContext(
+          tx as { execute: (q: unknown) => Promise<unknown> },
+          tenantA.id,
+        );
+        // biome-ignore lint/suspicious/noExplicitAny: tx type
+        const rows = (await (tx as any)
+          .select()
+          .from(s.sessions)) as Array<{ tenantId: string | null }>;
+        expect(rows.length).toBeGreaterThanOrEqual(1);
+        for (const r of rows) {
+          expect(r.tenantId).toBe(tenantA.id);
+        }
+        // biome-ignore lint/suspicious/noExplicitAny: tx type
+        const byId = await (tx as any)
+          .select()
+          .from(s.sessions)
+          .where(eq(s.sessions.id, sessionB.id));
+        expect(byId.length).toBe(0);
+      });
+    });
+
+    test("transaction primed with tenant B sees only B's sessions", async () => {
+      const s = mod.schema;
+      await db.transaction(async (tx: unknown) => {
+        await mod.rls.setTenantContext(
+          tx as { execute: (q: unknown) => Promise<unknown> },
+          tenantB.id,
+        );
+        // biome-ignore lint/suspicious/noExplicitAny: tx type
+        const rows = (await (tx as any)
+          .select()
+          .from(s.sessions)) as Array<{ tenantId: string | null }>;
+        expect(rows.length).toBeGreaterThanOrEqual(1);
+        for (const r of rows) {
+          expect(r.tenantId).toBe(tenantB.id);
+        }
+      });
+    });
+
+    test("unprimed transaction: scopedQuery still enforces isolation", async () => {
+      const s = mod.schema;
+      const scopedA = mod.guard.scopedQuery({ tenantId: tenantA.id });
+      const rows = (await scopedA.selectFrom(
+        s.sessions,
+        and(eq(s.sessions.id, sessionB.id)),
+      )) as unknown as unknown[];
+      expect(rows.length).toBe(0);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Chat mutations
+  // -----------------------------------------------------------------------
+
+  describe("chat mutations", () => {
+    test("updateChat: A cannot update B's chat title", async () => {
+      const s = mod.schema;
+      const scopedA = mod.guard.scopedQuery({ tenantId: tenantA.id });
+      const result = (await scopedA.updateSet(
+        s.chats,
+        eq(s.chats.id, chatB.id),
+        { title: "pwned" },
+      )) as unknown as { count?: number };
+      expect(result.count ?? 0).toBe(0);
+
+      const rows = await db
+        .select({ title: s.chats.title })
+        .from(s.chats)
+        .where(eq(s.chats.id, chatB.id));
+      expect(rows[0]?.title).toBe("B-chat");
+    });
+
+    test("touchChat: A cannot update B's chat updatedAt", async () => {
+      const s = mod.schema;
+      const scopedA = mod.guard.scopedQuery({ tenantId: tenantA.id });
+      const result = (await scopedA.updateSet(
+        s.chats,
+        eq(s.chats.id, chatB.id),
+        { updatedAt: new Date() },
+      )) as unknown as { count?: number };
+      expect(result.count ?? 0).toBe(0);
+    });
+
+    test("deleteChat: A cannot delete B's chat", async () => {
+      const s = mod.schema;
+      const scopedA = mod.guard.scopedQuery({ tenantId: tenantA.id });
+      const result = (await scopedA.deleteFrom(
+        s.chats,
+        eq(s.chats.id, chatB.id),
+      )) as unknown as { count?: number };
+      expect(result.count ?? 0).toBe(0);
+
+      const rows = await db
+        .select({ id: s.chats.id })
+        .from(s.chats)
+        .where(eq(s.chats.id, chatB.id));
+      expect(rows.length).toBe(1);
+    });
+
+    test("getChatMessages: A cannot see B's chat messages", async () => {
+      const s = mod.schema;
+      const scopedA = mod.guard.scopedQuery({ tenantId: tenantA.id });
+      const rows = (await scopedA.selectFrom(
+        s.chatMessages,
+        eq(s.chatMessages.chatId, chatB.id),
+      )) as unknown as unknown[];
+      expect(rows.length).toBe(0);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Workflow runs
+  // -----------------------------------------------------------------------
+
+  describe("workflow runs", () => {
+    test("A sees only A's workflow runs", async () => {
+      const s = mod.schema;
+      const scopedA = mod.guard.scopedQuery({ tenantId: tenantA.id });
+      const rows = (await scopedA.selectFrom(
+        s.workflowRuns,
+      )) as unknown as Array<{ tenantId: string | null; id: string }>;
       expect(rows.length).toBeGreaterThanOrEqual(1);
       for (const r of rows) {
-        expect(r.tenantId).toBe(tenantB.id);
+        expect(r.tenantId).toBe(tenantA.id);
       }
+    });
+
+    test("B cannot see A's workflow runs", async () => {
+      const s = mod.schema;
+      const scopedB = mod.guard.scopedQuery({ tenantId: tenantB.id });
+      const rows = (await scopedB.selectFrom(
+        s.workflowRuns,
+        eq(s.workflowRuns.id, workflowRunA.id),
+      )) as unknown as unknown[];
+      expect(rows.length).toBe(0);
     });
   });
 
-  test("RLS: unprimed transaction still sees rows (RLS fires only when GUC is set)", async () => {
-    // This documents the current behavior — RLS policies use
-    // `current_setting('app.tenant_id', true)` which returns NULL when unset,
-    // and `tenant_id = NULL` is always false. But because the app role is
-    // typically the table owner / a superuser, RLS may be bypassed. We just
-    // assert that the primary control (scopedQuery) remains the source of
-    // truth regardless, which the earlier tests already cover.
-    const s = mod.schema;
-    const scopedA = mod.guard.scopedQuery({ tenantId: tenantA.id });
-    const rows = (await scopedA.selectFrom(
-      s.sessions,
-      and(eq(s.sessions.id, sessionB.id)),
-    )) as unknown as unknown[];
-    expect(rows.length).toBe(0);
+  // -----------------------------------------------------------------------
+  // Usage events
+  // -----------------------------------------------------------------------
+
+  describe("usage events", () => {
+    test("A sees only A's usage events", async () => {
+      const s = mod.schema;
+      const scopedA = mod.guard.scopedQuery({ tenantId: tenantA.id });
+      const rows = (await scopedA.selectFrom(
+        s.usageEvents,
+      )) as unknown as Array<{ tenantId: string | null }>;
+      expect(rows.length).toBeGreaterThanOrEqual(1);
+      for (const r of rows) {
+        expect(r.tenantId).toBe(tenantA.id);
+      }
+    });
+
+    test("B cannot see A's usage events", async () => {
+      const s = mod.schema;
+      const scopedB = mod.guard.scopedQuery({ tenantId: tenantB.id });
+      const rows = (await scopedB.selectFrom(
+        s.usageEvents,
+        eq(s.usageEvents.id, usageA.id),
+      )) as unknown as unknown[];
+      expect(rows.length).toBe(0);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Tenant API keys
+  // -----------------------------------------------------------------------
+
+  describe("tenant API keys", () => {
+    test("A sees only A's API keys", async () => {
+      const s = mod.schema;
+      const scopedA = mod.guard.scopedQuery({ tenantId: tenantA.id });
+      const rows = (await scopedA.selectFrom(
+        s.tenantApiKeys,
+      )) as unknown as Array<{ tenantId: string; id: string }>;
+      expect(rows.length).toBeGreaterThanOrEqual(1);
+      for (const r of rows) {
+        expect(r.tenantId).toBe(tenantA.id);
+      }
+    });
+
+    test("B cannot see A's API keys", async () => {
+      const s = mod.schema;
+      const scopedB = mod.guard.scopedQuery({ tenantId: tenantB.id });
+      const rows = (await scopedB.selectFrom(
+        s.tenantApiKeys,
+        eq(s.tenantApiKeys.id, apiKeyA.id),
+      )) as unknown as unknown[];
+      expect(rows.length).toBe(0);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Webhooks
+  // -----------------------------------------------------------------------
+
+  describe("webhooks", () => {
+    test("A sees only A's webhooks", async () => {
+      const s = mod.schema;
+      const scopedA = mod.guard.scopedQuery({ tenantId: tenantA.id });
+      const rows = (await scopedA.selectFrom(
+        s.tenantWebhooks,
+      )) as unknown as Array<{ tenantId: string }>;
+      expect(rows.length).toBeGreaterThanOrEqual(1);
+      for (const r of rows) {
+        expect(r.tenantId).toBe(tenantA.id);
+      }
+    });
+
+    test("B cannot see A's webhooks", async () => {
+      const s = mod.schema;
+      const scopedB = mod.guard.scopedQuery({ tenantId: tenantB.id });
+      const rows = (await scopedB.selectFrom(
+        s.tenantWebhooks,
+        eq(s.tenantWebhooks.id, webhookA.id),
+      )) as unknown as unknown[];
+      expect(rows.length).toBe(0);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Invites
+  // -----------------------------------------------------------------------
+
+  describe("invites", () => {
+    test("A sees only A's invites", async () => {
+      const s = mod.schema;
+      const scopedA = mod.guard.scopedQuery({ tenantId: tenantA.id });
+      const rows = (await scopedA.selectFrom(
+        s.tenantInvites,
+      )) as unknown as Array<{ tenantId: string }>;
+      expect(rows.length).toBeGreaterThanOrEqual(1);
+      for (const r of rows) {
+        expect(r.tenantId).toBe(tenantA.id);
+      }
+    });
+
+    test("B cannot see A's invites", async () => {
+      const s = mod.schema;
+      const scopedB = mod.guard.scopedQuery({ tenantId: tenantB.id });
+      const rows = (await scopedB.selectFrom(
+        s.tenantInvites,
+        eq(s.tenantInvites.id, inviteA.id),
+      )) as unknown as unknown[];
+      expect(rows.length).toBe(0);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Quota alerts
+  // -----------------------------------------------------------------------
+
+  describe("quota alerts", () => {
+    test("A sees only A's quota alerts", async () => {
+      const s = mod.schema;
+      const scopedA = mod.guard.scopedQuery({ tenantId: tenantA.id });
+      const rows = (await scopedA.selectFrom(
+        s.tenantQuotaAlerts,
+      )) as unknown as Array<{ tenantId: string }>;
+      expect(rows.length).toBeGreaterThanOrEqual(1);
+      for (const r of rows) {
+        expect(r.tenantId).toBe(tenantA.id);
+      }
+    });
+
+    test("B cannot see A's quota alerts", async () => {
+      const s = mod.schema;
+      const scopedB = mod.guard.scopedQuery({ tenantId: tenantB.id });
+      const rows = (await scopedB.selectFrom(
+        s.tenantQuotaAlerts,
+        eq(s.tenantQuotaAlerts.id, alertA.id),
+      )) as unknown as unknown[];
+      expect(rows.length).toBe(0);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // API tokens (PAT)
+  // -----------------------------------------------------------------------
+
+  describe("API tokens (PAT)", () => {
+    test("A sees only A's tokens", async () => {
+      const s = mod.schema;
+      const scopedA = mod.guard.scopedQuery({ tenantId: tenantA.id });
+      const rows = (await scopedA.selectFrom(
+        s.tenantApiTokens,
+      )) as unknown as Array<{ tenantId: string }>;
+      expect(rows.length).toBeGreaterThanOrEqual(1);
+      for (const r of rows) {
+        expect(r.tenantId).toBe(tenantA.id);
+      }
+    });
+
+    test("B cannot see A's tokens", async () => {
+      const s = mod.schema;
+      const scopedB = mod.guard.scopedQuery({ tenantId: tenantB.id });
+      const rows = (await scopedB.selectFrom(
+        s.tenantApiTokens,
+        eq(s.tenantApiTokens.id, tokenA.id),
+      )) as unknown as unknown[];
+      expect(rows.length).toBe(0);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Vercel project links
+  // -----------------------------------------------------------------------
+
+  describe("vercel project links", () => {
+    test("A sees only A's project links", async () => {
+      const s = mod.schema;
+      const scopedA = mod.guard.scopedQuery({ tenantId: tenantA.id });
+      const rows = (await scopedA.selectFrom(
+        s.vercelProjectLinks,
+      )) as unknown as Array<{ tenantId: string | null }>;
+      expect(rows.length).toBeGreaterThanOrEqual(1);
+      for (const r of rows) {
+        expect(r.tenantId).toBe(tenantA.id);
+      }
+    });
+
+    test("B cannot see A's project links", async () => {
+      const s = mod.schema;
+      const scopedB = mod.guard.scopedQuery({ tenantId: tenantB.id });
+      const rows = (await scopedB.selectFrom(
+        s.vercelProjectLinks,
+        eq(s.vercelProjectLinks.userId, userA.id),
+      )) as unknown as unknown[];
+      expect(rows.length).toBe(0);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // User preferences (user-scoped + tenantId column)
+  // -----------------------------------------------------------------------
+
+  describe("user preferences", () => {
+    test("has tenantId column and scopedQuery isolates by tenant", async () => {
+      const s = mod.schema;
+      const scopedA = mod.guard.scopedQuery({ tenantId: tenantA.id });
+      const rows = (await scopedA.selectFrom(
+        s.userPreferences,
+      )) as unknown as Array<{ tenantId: string | null; userId: string }>;
+      expect(rows.length).toBeGreaterThanOrEqual(1);
+      for (const r of rows) {
+        expect(r.tenantId).toBe(tenantA.id);
+      }
+    });
+
+    test("B cannot see A's preferences via scopedQuery", async () => {
+      const s = mod.schema;
+      const scopedB = mod.guard.scopedQuery({ tenantId: tenantB.id });
+      const rows = (await scopedB.selectFrom(
+        s.userPreferences,
+        eq(s.userPreferences.id, prefA.id),
+      )) as unknown as unknown[];
+      expect(rows.length).toBe(0);
+    });
+
+    test("userPreferences table has tenantId (user+tenant scoped, not user-only)", async () => {
+      // Verify the schema includes tenantId — documenting that preferences
+      // are tenant-scoped (a user can have different prefs per org).
+      const s = mod.schema;
+      expect(s.userPreferences.tenantId).toBeDefined();
+    });
   });
 });
