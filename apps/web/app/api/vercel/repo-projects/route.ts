@@ -9,6 +9,7 @@ export async function GET(req: Request) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
+  const tenantId = session.activeTenantId ?? undefined;
   const { searchParams } = new URL(req.url);
   const repoOwner = searchParams.get("repoOwner")?.trim();
   const repoName = searchParams.get("repoName")?.trim();
@@ -30,7 +31,7 @@ export async function GET(req: Request) {
 
   try {
     const [savedLink, projects] = await Promise.all([
-      getVercelProjectLinkByRepo(session.user.id, repoOwner, repoName),
+      getVercelProjectLinkByRepo(session.user.id, repoOwner, repoName, tenantId),
       listMatchingVercelProjects({
         token,
         repoOwner,

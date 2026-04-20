@@ -304,7 +304,7 @@ export async function recordWorkflowUsage(
           cachedInputTokens: cachedInputTokensFor(totalUsage),
           outputTokens: totalUsage.outputTokens ?? 0,
         },
-      });
+      }, workflowTenantId ?? undefined);
 
       // Emit Stripe metering for token usage. Best-effort and lazy so a
       // billing outage can't take down the workflow step.
@@ -429,7 +429,7 @@ export async function recordWorkflowUsage(
             outputTokens: modelUsage.usage.outputTokens ?? 0,
           },
           toolCallCount: modelUsage.toolCallCount,
-        });
+        }, workflowTenantId ?? undefined);
 
         // Bump per-provider daily spend counter for the subagent's
         // model. Mirrors the main-agent path above so cap enforcement

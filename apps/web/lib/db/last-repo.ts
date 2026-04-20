@@ -6,12 +6,16 @@ import { sessions } from "./schema";
  * Returns the repo info from the user's most recently created session
  * that was started from a repository, or null if none exists.
  */
-export async function getLastRepoByUserId(userId: string) {
+export async function getLastRepoByUserId(
+  userId: string,
+  tenantId?: string | null,
+) {
   const row = await db.query.sessions.findFirst({
     where: and(
       eq(sessions.userId, userId),
       isNotNull(sessions.repoOwner),
       isNotNull(sessions.repoName),
+      tenantId ? eq(sessions.tenantId, tenantId) : undefined,
     ),
     orderBy: [desc(sessions.createdAt)],
     columns: {

@@ -1,3 +1,6 @@
+// Intentionally cross-tenant: public usage profiles aggregate a user's usage
+// across all tenants. The profile is opt-in (publicUsageEnabled) and represents
+// the user's total platform activity, not tenant-specific data.
 import { cache } from "react";
 import { eq, sql } from "drizzle-orm";
 import type { UsageInsights, UsageRepositoryInsight } from "@/lib/usage/types";

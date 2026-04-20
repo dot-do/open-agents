@@ -307,6 +307,7 @@ export async function POST(req: Request) {
           repoOwner,
           repoName,
           project: matchedProject,
+          tenantId: postTenantId,
         });
         resolvedVercelProject = matchedProject;
       } else if (explicitVercelProject === undefined) {
@@ -314,6 +315,7 @@ export async function POST(req: Request) {
           session.user.id,
           repoOwner,
           repoName,
+          postTenantId,
         );
       }
     }

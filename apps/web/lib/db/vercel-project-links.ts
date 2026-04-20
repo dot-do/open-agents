@@ -11,6 +11,7 @@ export async function getVercelProjectLinkByRepo(
   userId: string,
   repoOwner: string,
   repoName: string,
+  tenantId?: string,
 ): Promise<VercelProjectSelection | null> {
   const normalizedOwner = normalizeRepoCoordinate(repoOwner);
   const normalizedRepo = normalizeRepoCoordinate(repoName);
@@ -28,6 +29,9 @@ export async function getVercelProjectLinkByRepo(
         eq(vercelProjectLinks.userId, userId),
         eq(vercelProjectLinks.repoOwner, normalizedOwner),
         eq(vercelProjectLinks.repoName, normalizedRepo),
+        tenantId
+          ? eq(vercelProjectLinks.tenantId, tenantId)
+          : undefined,
       ),
     )
     .limit(1);
@@ -49,6 +53,7 @@ export async function upsertVercelProjectLink(params: {
   repoOwner: string;
   repoName: string;
   project: VercelProjectSelection;
+  tenantId?: string;
 }): Promise<void> {
   const normalizedOwner = normalizeRepoCoordinate(params.repoOwner);
   const normalizedRepo = normalizeRepoCoordinate(params.repoName);
@@ -58,6 +63,7 @@ export async function upsertVercelProjectLink(params: {
     .insert(vercelProjectLinks)
     .values({
       userId: params.userId,
+      tenantId: params.tenantId ?? null,
       repoOwner: normalizedOwner,
       repoName: normalizedRepo,
       projectId: params.project.projectId,

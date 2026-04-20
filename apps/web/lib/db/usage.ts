@@ -22,6 +22,7 @@ export async function recordUsage(
     };
     toolCallCount?: number;
   },
+  tenantId?: string,
 ) {
   const inferredToolCallCount = data.messages
     .flatMap((m) => m.parts)
@@ -38,6 +39,7 @@ export async function recordUsage(
   await db.insert(usageEvents).values({
     id: nanoid(),
     userId,
+    tenantId: tenantId ?? null,
     source: data.source,
     agentType: data.agentType ?? "main",
     provider: provider ?? null,
@@ -71,25 +73,31 @@ export interface UsageHistoryOptions {
 function buildUsageHistoryWhereClause(
   userId: string,
   options?: UsageHistoryOptions,
+  tenantId?: string,
 ) {
+  const tenantClause = tenantId
+    ? sql` and ${usageEvents.tenantId} = ${tenantId}`
+    : sql``;
+
   if (options?.range) {
-    return sql`${usageEvents.userId} = ${userId} and date(${usageEvents.createdAt}) >= ${options.range.from} and date(${usageEvents.createdAt}) <= ${options.range.to}`;
+    return sql`${usageEvents.userId} = ${userId} and date(${usageEvents.createdAt}) >= ${options.range.from} and date(${usageEvents.createdAt}) <= ${options.range.to}${tenantClause}`;
   }
 
   if (options?.allTime) {
-    return sql`${usageEvents.userId} = ${userId}`;
+    return sql`${usageEvents.userId} = ${userId}${tenantClause}`;
   }
 
   const days = options?.days ?? 280;
   const since = new Date();
   since.setDate(since.getDate() - days);
 
-  return sql`${usageEvents.userId} = ${userId} and ${usageEvents.createdAt} >= ${since.toISOString()}`;
+  return sql`${usageEvents.userId} = ${userId} and ${usageEvents.createdAt} >= ${since.toISOString()}${tenantClause}`;
 }
 
 export async function getUsageHistory(
   userId: string,
   options?: UsageHistoryOptions,
+  tenantId?: string,
 ): Promise<DailyUsage[]> {
   const rows = await db
     .select({
@@ -105,7 +113,7 @@ export async function getUsageHistory(
       toolCallCount: sql<number>`coalesce(sum(${usageEvents.toolCallCount}), 0)::double precision`,
     })
     .from(usageEvents)
-    .where(buildUsageHistoryWhereClause(userId, options))
+    .where(buildUsageHistoryWhereClause(userId, options, tenantId))
     .groupBy(
       sql`date(${usageEvents.createdAt})`,
       usageEvents.source,

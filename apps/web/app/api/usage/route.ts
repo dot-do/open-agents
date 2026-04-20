@@ -15,6 +15,7 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
+  const tenantId = session.activeTenantId ?? undefined;
   const rangeResult = parseUsageQueryRange(req);
   if (!rangeResult.ok) {
     return rangeResult.response;
@@ -25,8 +26,8 @@ export async function GET(req: NextRequest) {
       ? { range: rangeResult.range }
       : undefined;
     const [usage, insights, domainLeaderboard] = await Promise.all([
-      getUsageHistory(session.user.id, queryOptions),
-      getUsageInsights(session.user.id, queryOptions),
+      getUsageHistory(session.user.id, queryOptions, tenantId),
+      getUsageInsights(session.user.id, queryOptions, tenantId),
       getUsageDomainLeaderboard(session.user.email, queryOptions),
     ]);
     return Response.json({ usage, insights, domainLeaderboard });

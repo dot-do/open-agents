@@ -32,36 +32,45 @@ export interface UsageInsightsOptions {
 function buildUsageEventsWhereClause(
   userId: string,
   options?: UsageInsightsOptions,
+  tenantId?: string,
 ) {
+  const tenantClause = tenantId
+    ? sql` and ${usageEvents.tenantId} = ${tenantId}`
+    : sql``;
+
   if (options?.range) {
-    return sql`${usageEvents.userId} = ${userId} and date(${usageEvents.createdAt}) >= ${options.range.from} and date(${usageEvents.createdAt}) <= ${options.range.to}`;
+    return sql`${usageEvents.userId} = ${userId} and date(${usageEvents.createdAt}) >= ${options.range.from} and date(${usageEvents.createdAt}) <= ${options.range.to}${tenantClause}`;
   }
 
   if (options?.allTime) {
-    return sql`${usageEvents.userId} = ${userId}`;
+    return sql`${usageEvents.userId} = ${userId}${tenantClause}`;
   }
 
   const days = options?.days ?? 280;
   const since = new Date();
   since.setDate(since.getDate() - days);
 
-  return sql`${usageEvents.userId} = ${userId} and ${usageEvents.createdAt} >= ${since.toISOString()}`;
+  return sql`${usageEvents.userId} = ${userId} and ${usageEvents.createdAt} >= ${since.toISOString()}${tenantClause}`;
 }
 
 function buildSessionsWhereClause(
   userId: string,
   options?: UsageInsightsOptions,
+  tenantId?: string,
 ) {
+  const tenantFilter = tenantId ? eq(sessions.tenantId, tenantId) : undefined;
+
   if (options?.range) {
     return and(
       eq(sessions.userId, userId),
+      tenantFilter,
       sql`date(${sessions.updatedAt}) >= ${options.range.from}`,
       sql`date(${sessions.updatedAt}) <= ${options.range.to}`,
     );
   }
 
   if (options?.allTime) {
-    return eq(sessions.userId, userId);
+    return and(eq(sessions.userId, userId), tenantFilter);
   }
 
   const days = options?.days ?? 280;
@@ -70,6 +79,7 @@ function buildSessionsWhereClause(
 
   return and(
     eq(sessions.userId, userId),
+    tenantFilter,
     sql`${sessions.updatedAt} >= ${since.toISOString()}`,
   );
 }
@@ -89,6 +99,7 @@ function getLookbackDays(options?: UsageInsightsOptions): number {
 export async function getUsageInsights(
   userId: string,
   options?: UsageInsightsOptions,
+  tenantId?: string,
 ): Promise<UsageInsights> {
   const [aggregateRows, sessionRows] = await Promise.all([
     db
@@ -103,7 +114,7 @@ export async function getUsageInsights(
         largestMainTurnTokens: sql<number>`coalesce(max(case when ${usageEvents.agentType} = 'main' then cast(${usageEvents.inputTokens} as bigint) + cast(${usageEvents.outputTokens} as bigint) end), 0)::double precision`,
       })
       .from(usageEvents)
-      .where(buildUsageEventsWhereClause(userId, options)),
+      .where(buildUsageEventsWhereClause(userId, options, tenantId)),
     db
       .select({
         repoOwner: sessions.repoOwner,
@@ -115,7 +126,7 @@ export async function getUsageInsights(
         updatedAt: sessions.updatedAt,
       })
       .from(sessions)
-      .where(buildSessionsWhereClause(userId, options)),
+      .where(buildSessionsWhereClause(userId, options, tenantId)),
   ]);
 
   const aggregate = aggregateRows[0] ?? EMPTY_USAGE_AGGREGATE;

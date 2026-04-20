@@ -1,3 +1,6 @@
+// Intentionally cross-tenant: the domain leaderboard aggregates usage across
+// all tenants for users sharing the same email domain. This is a platform-wide
+// feature scoped by email domain, not by tenant.
 import { eq, sql } from "drizzle-orm";
 import type { UsageDateRange } from "@/lib/usage/date-range";
 import { getUsageLeaderboardDomain } from "@/lib/usage/leaderboard-domain";
