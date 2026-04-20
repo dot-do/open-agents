@@ -1,0 +1,1 @@
+ALTER TABLE "tenant_quotas" ADD COLUMN "max_sessions" integer;

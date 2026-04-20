@@ -260,6 +260,13 @@
       "when": 1776338192971,
       "tag": "0036_third_ozymandias",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1776691548503,
+      "tag": "0037_special_korath",
+      "breakpoints": true
     }
   ]
 }

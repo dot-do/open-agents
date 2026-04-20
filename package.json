@@ -26,7 +26,8 @@
     "test:isolated": "bun run scripts/test-isolated.ts",
     "verify:migrations": "bun run scripts/verify-migrations.ts",
     "test:verbose": "bun test --reporter=junit --reporter-outfile /dev/stdout",
-    "admin:sandboxes": "bun run scripts/admin-sandboxes.ts"
+    "admin:sandboxes": "bun run scripts/admin-sandboxes.ts",
+    "seed": "bun run scripts/seed.ts"
   },
   "devDependencies": {
     "oxfmt": "^0.43.0",

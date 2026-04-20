@@ -23,6 +23,7 @@ import {
   MANAGED_TEMPLATE_TRIAL_SESSION_LIMIT,
   MANAGED_TEMPLATE_TRIAL_SESSION_LIMIT_ERROR,
 } from "@/lib/managed-template-trial";
+import { getTenantQuotas } from "@/lib/quotas";
 import { listMatchingVercelProjects } from "@/lib/vercel/projects";
 import { getUserVercelToken } from "@/lib/vercel/token";
 import {
@@ -182,6 +183,20 @@ export async function POST(req: Request) {
       return Response.json(
         { error: MANAGED_TEMPLATE_TRIAL_SESSION_LIMIT_ERROR },
         { status: 403 },
+      );
+    }
+  }
+
+  // Session count quota enforcement (tenant-scoped)
+  if (postTenantId) {
+    const [quotas, existingCount] = await Promise.all([
+      getTenantQuotas(postTenantId),
+      countSessionsByUserId(session.user.id, postTenantId),
+    ]);
+    if (quotas.maxSessions !== null && existingCount >= quotas.maxSessions) {
+      return Response.json(
+        { error: "plan_upgrade_required", feature: "max_sessions" },
+        { status: 402 },
       );
     }
   }

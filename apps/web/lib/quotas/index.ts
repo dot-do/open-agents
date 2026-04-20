@@ -75,6 +75,7 @@ const DEFAULT_QUOTAS: Omit<TenantQuota, "tenantId" | "updatedAt"> = {
   maxConcurrentSandboxes: 3,
   maxMonthlyMinutes: 600,
   maxDailyCostCents: 500,
+  maxSessions: null,
   hardKillEnabled: true,
   // null = no per-provider caps; only the global maxDailyCostCents applies.
   maxDailySpendByProvider: null,

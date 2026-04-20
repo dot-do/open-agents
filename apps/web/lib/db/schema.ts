@@ -552,6 +552,7 @@ export const tenantQuotas = pgTable("tenant_quotas", {
     .default(3),
   maxMonthlyMinutes: integer("max_monthly_minutes").notNull().default(600),
   maxDailyCostCents: integer("max_daily_cost_cents").notNull().default(500),
+  maxSessions: integer("max_sessions"),
   hardKillEnabled: boolean("hard_kill_enabled").notNull().default(true),
   // Wave 6 (lcc): optional per-provider daily spend caps in cents.
   // NULL = no per-provider limit; only the global maxDailyCostCents applies.

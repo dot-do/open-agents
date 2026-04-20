@@ -28,6 +28,7 @@ export type Plan = "free" | "pro" | "team" | "enterprise";
 
 export type PlanFeature =
   | "concurrent_sandboxes"
+  | "max_sessions"
   | "byo_keys"
   | "sso"
   | `model:${string}`;
@@ -86,6 +87,8 @@ export const PLAN_MATRIX: Record<
   Plan,
   {
     concurrent_sandboxes: number | "custom";
+    /** Max total sessions per tenant. `null` = unlimited. */
+    max_sessions: number | null;
     byo_keys: boolean;
     sso: boolean;
     /**
@@ -100,6 +103,7 @@ export const PLAN_MATRIX: Record<
 > = {
   free: {
     concurrent_sandboxes: 1,
+    max_sessions: 5,
     byo_keys: false,
     sso: false,
     rateLimit: { rpm: 60, burst: 30 },
@@ -107,6 +111,7 @@ export const PLAN_MATRIX: Record<
   },
   pro: {
     concurrent_sandboxes: 3,
+    max_sessions: 50,
     byo_keys: true,
     sso: false,
     rateLimit: { rpm: 600, burst: 120 },
@@ -114,6 +119,7 @@ export const PLAN_MATRIX: Record<
   },
   team: {
     concurrent_sandboxes: 10,
+    max_sessions: 500,
     byo_keys: true,
     sso: false,
     rateLimit: { rpm: 3000, burst: 500 },
@@ -121,6 +127,7 @@ export const PLAN_MATRIX: Record<
   },
   enterprise: {
     concurrent_sandboxes: "custom",
+    max_sessions: null,
     byo_keys: true,
     sso: true,
     rateLimit: { rpm: 10000, burst: 2000 },
