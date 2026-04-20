@@ -94,9 +94,10 @@ export function NewWorkspaceDialog({
       });
 
       await onCreated?.(tenant.id);
-      router.refresh();
       onOpenChange(false);
       reset();
+      router.push(`/t/${trimmedSlug}/onboarding`);
+      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Request failed");
       setSubmitting(false);

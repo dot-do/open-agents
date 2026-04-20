@@ -42,7 +42,16 @@ export default async function TenantHomePage({
           Tenant
         </div>
         <h1 className="text-2xl font-semibold">{tenant.name}</h1>
-        <div className="text-sm text-muted-foreground">{tenant.slug}</div>
+        <div className="mt-1 flex items-center gap-3 text-sm text-muted-foreground">
+          <span>{tenant.slug}</span>
+          <span className="text-border">|</span>
+          <Link
+            href={`/t/${tenant.slug}/activity`}
+            className="hover:text-foreground transition-colors"
+          >
+            Activity
+          </Link>
+        </div>
       </header>
 
       <section>
