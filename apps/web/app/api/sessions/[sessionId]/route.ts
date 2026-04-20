@@ -26,8 +26,9 @@ export async function GET(
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
+  const tenantId = session.activeTenantId ?? undefined;
   const { sessionId } = await params;
-  const existingSession = await getSessionById(sessionId);
+  const existingSession = await getSessionById(sessionId, tenantId);
 
   if (!existingSession) {
     return Response.json({ error: "Session not found" }, { status: 404 });
@@ -49,8 +50,9 @@ export async function PATCH(
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
+  const patchTenantId = session.activeTenantId ?? undefined;
   const { sessionId } = await params;
-  const existingSession = await getSessionById(sessionId);
+  const existingSession = await getSessionById(sessionId, patchTenantId);
 
   if (!existingSession) {
     return Response.json({ error: "Session not found" }, { status: 404 });
@@ -111,7 +113,7 @@ export async function PATCH(
           scheduleBackgroundWork: after,
         })
       ).session
-    : await updateSession(sessionId, updatePayload);
+    : await updateSession(sessionId, updatePayload, patchTenantId);
 
   if (!updatedSession) {
     return Response.json({ error: "Session not found" }, { status: 404 });
@@ -129,8 +131,9 @@ export async function DELETE(
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
+  const deleteTenantId = session.activeTenantId ?? undefined;
   const { sessionId } = await params;
-  const existingSession = await getSessionById(sessionId);
+  const existingSession = await getSessionById(sessionId, deleteTenantId);
 
   if (!existingSession) {
     return Response.json({ error: "Session not found" }, { status: 404 });
@@ -140,6 +143,6 @@ export async function DELETE(
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  await deleteSession(sessionId);
+  await deleteSession(sessionId, deleteTenantId);
   return Response.json({ success: true });
 }

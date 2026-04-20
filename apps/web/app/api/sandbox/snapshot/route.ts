@@ -58,6 +58,7 @@ export async function POST(req: Request) {
 
   const sessionContext = await requireOwnedSessionWithSandboxGuard({
     userId: authResult.userId,
+    tenantId: authResult.tenantId,
     sessionId,
     sandboxGuard: canOperateOnSandbox,
     sandboxErrorMessage: "Sandbox not initialized",
@@ -126,6 +127,7 @@ export async function PUT(req: Request) {
 
   const sessionContext = await requireOwnedSession({
     userId: authResult.userId,
+    tenantId: authResult.tenantId,
     sessionId,
   });
   if (!sessionContext.ok) {

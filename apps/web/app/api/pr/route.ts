@@ -113,7 +113,8 @@ export async function POST(req: Request) {
   }
 
   // 3. Verify session ownership
-  const sessionRecord = await getSessionById(sessionId);
+  const prTenantId = session?.activeTenantId ?? undefined;
+  const sessionRecord = await getSessionById(sessionId, prTenantId);
   if (!sessionRecord) {
     return Response.json({ error: "Session not found" }, { status: 404 });
   }

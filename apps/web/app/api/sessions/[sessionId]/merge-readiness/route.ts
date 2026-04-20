@@ -91,6 +91,7 @@ export async function GET(_req: Request, context: RouteContext) {
   const { sessionId } = await context.params;
   const sessionContext = await requireOwnedSession({
     userId: authResult.userId,
+    tenantId: authResult.tenantId,
     sessionId,
   });
   if (!sessionContext.ok) {

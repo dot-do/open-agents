@@ -44,6 +44,7 @@ export async function GET(req: Request, context: RouteContext) {
 
   const chatContext = await requireOwnedSessionChat({
     userId: authResult.userId,
+    tenantId: authResult.tenantId,
     sessionId,
     chatId,
   });
@@ -87,6 +88,7 @@ export async function PATCH(req: Request, context: RouteContext) {
 
   const chatContext = await requireOwnedSessionChat({
     userId: authResult.userId,
+    tenantId: authResult.tenantId,
     sessionId,
     chatId,
   });
@@ -156,6 +158,7 @@ export async function DELETE(_req: Request, context: RouteContext) {
 
   const chatContext = await requireOwnedSessionChat({
     userId: authResult.userId,
+    tenantId: authResult.tenantId,
     sessionId,
     chatId,
   });

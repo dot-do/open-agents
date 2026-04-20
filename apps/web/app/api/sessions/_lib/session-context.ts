@@ -12,6 +12,7 @@ type AuthenticatedUserResult =
   | {
       ok: true;
       userId: string;
+      tenantId: string | undefined;
     }
   | {
       ok: false;
@@ -42,6 +43,7 @@ type OwnedSessionChatResult =
 interface RequireOwnedSessionParams {
   userId: string;
   sessionId: string;
+  tenantId?: string;
   forbiddenMessage?: string;
 }
 
@@ -49,6 +51,7 @@ interface RequireOwnedSessionChatParams {
   userId: string;
   sessionId: string;
   chatId: string;
+  tenantId?: string;
   forbiddenMessage?: string;
 }
 
@@ -74,15 +77,16 @@ export async function requireAuthenticatedUser(): Promise<AuthenticatedUserResul
   return {
     ok: true,
     userId: session.user.id,
+    tenantId: session.activeTenantId ?? undefined,
   };
 }
 
 export async function requireOwnedSession(
   params: RequireOwnedSessionParams,
 ): Promise<OwnedSessionResult> {
-  const { userId, sessionId, forbiddenMessage = "Forbidden" } = params;
+  const { userId, sessionId, tenantId, forbiddenMessage = "Forbidden" } = params;
 
-  const sessionRecord = await sessionsDb.getSessionById(sessionId);
+  const sessionRecord = await sessionsDb.getSessionById(sessionId, tenantId);
   if (!sessionRecord) {
     return {
       ok: false,
@@ -91,6 +95,14 @@ export async function requireOwnedSession(
   }
 
   if (sessionRecord.userId !== userId) {
+    return {
+      ok: false,
+      response: toErrorResponse(forbiddenMessage, 403),
+    };
+  }
+
+  // Tenant mismatch check (defense-in-depth — the query already filters)
+  if (tenantId && sessionRecord.tenantId && sessionRecord.tenantId !== tenantId) {
     return {
       ok: false,
       response: toErrorResponse(forbiddenMessage, 403),
@@ -137,11 +149,11 @@ export async function requireOwnedSessionWithSandboxGuard(
 export async function requireOwnedSessionChat(
   params: RequireOwnedSessionChatParams,
 ): Promise<OwnedSessionChatResult> {
-  const { userId, sessionId, chatId, forbiddenMessage = "Forbidden" } = params;
+  const { userId, sessionId, chatId, tenantId, forbiddenMessage = "Forbidden" } = params;
 
   const [sessionRecord, chat] = await Promise.all([
-    sessionsDb.getSessionById(sessionId),
-    sessionsDb.getChatById(chatId),
+    sessionsDb.getSessionById(sessionId, tenantId),
+    sessionsDb.getChatById(chatId, tenantId),
   ]);
 
   if (!sessionRecord) {
@@ -152,6 +164,14 @@ export async function requireOwnedSessionChat(
   }
 
   if (sessionRecord.userId !== userId) {
+    return {
+      ok: false,
+      response: toErrorResponse(forbiddenMessage, 403),
+    };
+  }
+
+  // Tenant mismatch check (defense-in-depth)
+  if (tenantId && sessionRecord.tenantId && sessionRecord.tenantId !== tenantId) {
     return {
       ok: false,
       response: toErrorResponse(forbiddenMessage, 403),

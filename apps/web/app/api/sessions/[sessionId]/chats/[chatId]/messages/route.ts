@@ -39,6 +39,7 @@ export async function POST(req: Request, context: RouteContext) {
 
   const chatContext = await requireOwnedSessionChat({
     userId: authResult.userId,
+    tenantId: authResult.tenantId,
     sessionId,
     chatId,
   });

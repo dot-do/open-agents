@@ -41,6 +41,7 @@ export async function POST(req: Request) {
 
   const sessionContext = await requireOwnedSessionWithSandboxGuard({
     userId: authResult.userId,
+    tenantId: authResult.tenantId,
     sessionId,
     sandboxGuard: isSandboxActive,
     sandboxErrorMessage: "Sandbox not active",

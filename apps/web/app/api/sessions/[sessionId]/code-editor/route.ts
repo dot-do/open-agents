@@ -38,10 +38,11 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
-async function connectCodeEditorSandbox(sessionId: string, userId: string) {
+async function connectCodeEditorSandbox(sessionId: string, userId: string, tenantId?: string) {
   const sessionContext = await requireOwnedSessionWithSandboxGuard({
     userId,
     sessionId,
+    tenantId,
     sandboxGuard: isSandboxActive,
     sandboxErrorMessage: "Resume the sandbox before opening the editor",
     sandboxErrorStatus: 409,
@@ -214,6 +215,7 @@ export async function GET(_req: Request, context: RouteContext) {
     const sandboxResult = await connectCodeEditorSandbox(
       sessionId,
       authResult.userId,
+      authResult.tenantId,
     );
     if (!sandboxResult.ok) {
       return sandboxResult.response;
@@ -257,6 +259,7 @@ export async function POST(req: Request, context: RouteContext) {
     const sandboxResult = await connectCodeEditorSandbox(
       sessionId,
       authResult.userId,
+      authResult.tenantId,
     );
     if (!sandboxResult.ok) {
       return sandboxResult.response;
@@ -339,6 +342,7 @@ export async function DELETE(_req: Request, context: RouteContext) {
     const sandboxResult = await connectCodeEditorSandbox(
       sessionId,
       authResult.userId,
+      authResult.tenantId,
     );
     if (!sandboxResult.ok) {
       return sandboxResult.response;

@@ -862,10 +862,12 @@ async function resolveDevServerTarget(
 async function connectDevServerSandboxForSession(
   sessionId: string,
   userId: string,
+  tenantId?: string,
 ) {
   const sessionContext = await requireOwnedSessionWithSandboxGuard({
     userId,
     sessionId,
+    tenantId,
     sandboxGuard: isSandboxActive,
     sandboxErrorMessage: "Resume the sandbox before running a dev server",
     sandboxErrorStatus: 409,
@@ -907,6 +909,7 @@ export async function POST(_req: Request, context: RouteContext) {
     const sandboxResult = await connectDevServerSandboxForSession(
       sessionId,
       authResult.userId,
+      authResult.tenantId,
     );
     if (!sandboxResult.ok) {
       return sandboxResult.response;
@@ -1006,6 +1009,7 @@ export async function DELETE(_req: Request, context: RouteContext) {
     const sandboxResult = await connectDevServerSandboxForSession(
       sessionId,
       authResult.userId,
+      authResult.tenantId,
     );
     if (!sandboxResult.ok) {
       return sandboxResult.response;

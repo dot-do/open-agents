@@ -70,6 +70,7 @@ export async function GET(req: Request): Promise<Response> {
 
   const sessionContext = await requireOwnedSession({
     userId: authResult.userId,
+    tenantId: authResult.tenantId,
     sessionId,
   });
   if (!sessionContext.ok) {

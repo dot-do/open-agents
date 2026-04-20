@@ -36,6 +36,7 @@ export async function POST(req: Request) {
 
   const sessionContext = await requireOwnedSession({
     userId: authResult.userId,
+    tenantId: authResult.tenantId,
     sessionId,
   });
   if (!sessionContext.ok) {

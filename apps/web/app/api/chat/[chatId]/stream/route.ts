@@ -24,6 +24,7 @@ export async function GET(_request: Request, context: RouteContext) {
 
   const chatContext = await requireOwnedChatById({
     userId: authResult.userId,
+    tenantId: authResult.tenantId,
     chatId,
     format: "text",
   });

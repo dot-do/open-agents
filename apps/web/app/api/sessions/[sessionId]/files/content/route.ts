@@ -72,6 +72,7 @@ export async function GET(req: Request, context: RouteContext) {
 
   const sessionContext = await requireOwnedSessionWithSandboxGuard({
     userId: authResult.userId,
+    tenantId: authResult.tenantId,
     sessionId,
     sandboxGuard: hasRuntimeSandboxState,
     sandboxErrorMessage: "Sandbox not initialized",

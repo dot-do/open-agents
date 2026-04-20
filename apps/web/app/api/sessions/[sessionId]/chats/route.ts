@@ -27,6 +27,7 @@ export async function GET(req: Request, context: RouteContext) {
 
   const sessionContext = await requireOwnedSession({
     userId: authResult.userId,
+    tenantId: authResult.tenantId,
     sessionId,
   });
   if (!sessionContext.ok) {
@@ -34,7 +35,7 @@ export async function GET(req: Request, context: RouteContext) {
   }
 
   const [chats, rawPreferences] = await Promise.all([
-    getChatSummariesBySessionId(sessionId, authResult.userId),
+    getChatSummariesBySessionId(sessionId, authResult.userId, authResult.tenantId),
     getUserPreferences(authResult.userId),
   ]);
   const preferences = sanitizeUserPreferencesForSession(
@@ -56,6 +57,7 @@ export async function POST(req: Request, context: RouteContext) {
 
   const sessionContext = await requireOwnedSession({
     userId: authResult.userId,
+    tenantId: authResult.tenantId,
     sessionId,
   });
   if (!sessionContext.ok) {
@@ -81,7 +83,7 @@ export async function POST(req: Request, context: RouteContext) {
   }
 
   if (requestedChatId) {
-    const existing = await getChatById(requestedChatId);
+    const existing = await getChatById(requestedChatId, authResult.tenantId);
     if (existing) {
       if (existing.sessionId !== sessionId) {
         return Response.json({ error: "Chat ID conflict" }, { status: 409 });
@@ -98,6 +100,7 @@ export async function POST(req: Request, context: RouteContext) {
   const chat = await createChat({
     id: requestedChatId ?? nanoid(),
     sessionId,
+    tenantId: authResult.tenantId ?? null,
     title: "New chat",
     modelId: preferences.defaultModelId,
   });

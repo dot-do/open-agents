@@ -27,6 +27,7 @@ export async function GET(_req: Request, context: RouteContext) {
 
   const chatContext = await requireOwnedSessionChat({
     userId: authResult.userId,
+    tenantId: authResult.tenantId,
     sessionId,
     chatId,
   });
@@ -34,7 +35,7 @@ export async function GET(_req: Request, context: RouteContext) {
     return chatContext.response;
   }
 
-  const share = await getShareByChatId(chatId);
+  const share = await getShareByChatId(chatId, authResult.tenantId);
   return Response.json({ shareId: share?.id ?? null });
 }
 
@@ -52,6 +53,7 @@ export async function POST(_req: Request, context: RouteContext) {
 
   const chatContext = await requireOwnedSessionChat({
     userId: authResult.userId,
+    tenantId: authResult.tenantId,
     sessionId,
     chatId,
   });
@@ -59,7 +61,7 @@ export async function POST(_req: Request, context: RouteContext) {
     return chatContext.response;
   }
 
-  const existingShare = await getShareByChatId(chatId);
+  const existingShare = await getShareByChatId(chatId, authResult.tenantId);
   if (existingShare) {
     return Response.json({ shareId: existingShare.id });
   }
@@ -67,6 +69,7 @@ export async function POST(_req: Request, context: RouteContext) {
   const createdShare = await createShareIfNotExists({
     id: nanoid(12),
     chatId,
+    tenantId: authResult.tenantId ?? null,
   });
 
   if (!createdShare) {
@@ -90,6 +93,7 @@ export async function DELETE(_req: Request, context: RouteContext) {
 
   const chatContext = await requireOwnedSessionChat({
     userId: authResult.userId,
+    tenantId: authResult.tenantId,
     sessionId,
     chatId,
   });
@@ -97,6 +101,6 @@ export async function DELETE(_req: Request, context: RouteContext) {
     return chatContext.response;
   }
 
-  await deleteShareByChatId(chatId);
+  await deleteShareByChatId(chatId, authResult.tenantId);
   return Response.json({ success: true });
 }

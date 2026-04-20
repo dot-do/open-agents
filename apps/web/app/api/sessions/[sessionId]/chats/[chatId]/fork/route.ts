@@ -27,6 +27,7 @@ export async function POST(req: Request, context: RouteContext) {
 
   const chatContext = await requireOwnedSessionChat({
     userId: authResult.userId,
+    tenantId: authResult.tenantId,
     sessionId,
     chatId,
   });
@@ -58,7 +59,7 @@ export async function POST(req: Request, context: RouteContext) {
       return Response.json({ error: "Invalid chat id" }, { status: 400 });
     }
 
-    const existingChat = await getChatById(requestedChatId);
+    const existingChat = await getChatById(requestedChatId, authResult.tenantId);
     if (existingChat) {
       return Response.json({ error: "Chat ID conflict" }, { status: 409 });
     }

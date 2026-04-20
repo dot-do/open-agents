@@ -88,6 +88,7 @@ export async function POST(req: Request) {
     userId,
     sessionId,
     chatId,
+    tenantId: authResult.tenantId,
     forbiddenMessage: "Unauthorized",
     requireActiveSandbox: true,
     sandboxInactiveMessage: "Sandbox not initialized",

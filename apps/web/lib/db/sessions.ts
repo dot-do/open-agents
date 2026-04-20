@@ -102,27 +102,36 @@ export async function createSessionWithInitialChat(
   });
 }
 
-export async function getSessionById(sessionId: string) {
+export async function getSessionById(sessionId: string, tenantId?: string | undefined) {
+  if (!tenantId) {
+    console.warn("[tenant-guard] getSessionById called without tenantId — TODO(security) thread tenantId from caller");
+  }
   const session = await db.query.sessions.findFirst({
-    where: eq(sessions.id, sessionId),
+    where: tenantId
+      ? and(eq(sessions.id, sessionId), eq(sessions.tenantId, tenantId))
+      : eq(sessions.id, sessionId),
   });
 
   return session ? normalizeSessionRecord(session) : session;
 }
 
-export async function getShareById(shareId: string) {
+export async function getShareById(shareId: string, tenantId?: string | undefined) {
+  // Shares are intentionally publicly readable (no tenant filter on read).
+  // tenantId param accepted for signature consistency but not enforced on reads.
   return db.query.shares.findFirst({
     where: eq(shares.id, shareId),
   });
 }
 
-export async function getShareByChatId(chatId: string) {
+export async function getShareByChatId(chatId: string, tenantId?: string | undefined) {
   return db.query.shares.findFirst({
-    where: eq(shares.chatId, chatId),
+    where: tenantId
+      ? and(eq(shares.chatId, chatId), eq(shares.tenantId, tenantId))
+      : eq(shares.chatId, chatId),
   });
 }
 
-export async function createShareIfNotExists(data: NewShare) {
+export async function createShareIfNotExists(data: NewShare & { tenantId?: string | null }) {
   const [share] = await db
     .insert(shares)
     .values(data)
@@ -136,37 +145,55 @@ export async function createShareIfNotExists(data: NewShare) {
   return getShareByChatId(data.chatId);
 }
 
-export async function deleteShareByChatId(chatId: string) {
-  await db.delete(shares).where(eq(shares.chatId, chatId));
+export async function deleteShareByChatId(chatId: string, tenantId?: string | undefined) {
+  await db.delete(shares).where(
+    tenantId
+      ? and(eq(shares.chatId, chatId), eq(shares.tenantId, tenantId))
+      : eq(shares.chatId, chatId),
+  );
 }
 
-export async function getSessionsByUserId(userId: string) {
+export async function getSessionsByUserId(userId: string, tenantId?: string | undefined) {
+  if (!tenantId) {
+    console.warn("[tenant-guard] getSessionsByUserId called without tenantId — TODO(security) thread tenantId from caller");
+  }
   const records = await db.query.sessions.findMany({
-    where: eq(sessions.userId, userId),
+    where: tenantId
+      ? and(eq(sessions.userId, userId), eq(sessions.tenantId, tenantId))
+      : eq(sessions.userId, userId),
     orderBy: [desc(sessions.createdAt)],
   });
 
   return records.map((session) => normalizeSessionRecord(session));
 }
 
-export async function countSessionsByUserId(userId: string): Promise<number> {
+export async function countSessionsByUserId(userId: string, tenantId?: string | undefined): Promise<number> {
   const [result] = await db
     .select({ count: sql<number>`COUNT(*)::int` })
     .from(sessions)
-    .where(eq(sessions.userId, userId));
+    .where(
+      tenantId
+        ? and(eq(sessions.userId, userId), eq(sessions.tenantId, tenantId))
+        : eq(sessions.userId, userId),
+    );
 
   return result?.count ?? 0;
 }
 
 export async function countUserMessagesByUserId(
   userId: string,
+  tenantId?: string | undefined,
 ): Promise<number> {
   const [result] = await db
     .select({ count: sql<number>`COUNT(*)::int` })
     .from(chatMessages)
     .innerJoin(chats, eq(chats.id, chatMessages.chatId))
     .innerJoin(sessions, eq(sessions.id, chats.sessionId))
-    .where(and(eq(sessions.userId, userId), eq(chatMessages.role, "user")));
+    .where(
+      tenantId
+        ? and(eq(sessions.userId, userId), eq(chatMessages.role, "user"), eq(sessions.tenantId, tenantId))
+        : and(eq(sessions.userId, userId), eq(chatMessages.role, "user")),
+    );
 
   return result?.count ?? 0;
 }
@@ -209,7 +236,11 @@ type GetSessionsWithUnreadByUserIdOptions = {
 export async function getSessionsWithUnreadByUserId(
   userId: string,
   options?: GetSessionsWithUnreadByUserIdOptions,
+  tenantId?: string | undefined,
 ): Promise<SessionWithUnread[]> {
+  if (!tenantId) {
+    console.warn("[tenant-guard] getSessionsWithUnreadByUserId called without tenantId — TODO(security) thread tenantId from caller");
+  }
   const status = options?.status ?? "all";
   const statusFilter =
     status === "active"
@@ -217,6 +248,10 @@ export async function getSessionsWithUnreadByUserId(
       : status === "archived"
         ? eq(sessions.status, "archived")
         : undefined;
+
+  const userFilter = tenantId
+    ? and(eq(sessions.userId, userId), eq(sessions.tenantId, tenantId))
+    : eq(sessions.userId, userId);
 
   const baseQuery = db
     .select({
@@ -254,8 +289,8 @@ export async function getSessionsWithUnreadByUserId(
     )
     .where(
       statusFilter
-        ? and(eq(sessions.userId, userId), statusFilter)
-        : eq(sessions.userId, userId),
+        ? and(userFilter, statusFilter)
+        : userFilter,
     )
     .groupBy(sessions.id)
     .orderBy(desc(sessions.createdAt));
@@ -275,11 +310,16 @@ export async function getSessionsWithUnreadByUserId(
 
 export async function getArchivedSessionCountByUserId(
   userId: string,
+  tenantId?: string | undefined,
 ): Promise<number> {
   const [result] = await db
     .select({ count: sql<number>`COUNT(*)::int` })
     .from(sessions)
-    .where(and(eq(sessions.userId, userId), eq(sessions.status, "archived")));
+    .where(
+      tenantId
+        ? and(eq(sessions.userId, userId), eq(sessions.status, "archived"), eq(sessions.tenantId, tenantId))
+        : and(eq(sessions.userId, userId), eq(sessions.status, "archived")),
+    );
 
   return result?.count ?? 0;
 }
@@ -290,22 +330,32 @@ export async function getArchivedSessionCountByUserId(
  */
 export async function getUsedSessionTitles(
   userId: string,
+  tenantId?: string | undefined,
 ): Promise<Set<string>> {
   const rows = await db
     .select({ title: sessions.title })
     .from(sessions)
-    .where(eq(sessions.userId, userId));
+    .where(
+      tenantId
+        ? and(eq(sessions.userId, userId), eq(sessions.tenantId, tenantId))
+        : eq(sessions.userId, userId),
+    );
   return new Set(rows.map((r) => r.title));
 }
 
 export async function updateSession(
   sessionId: string,
   data: Partial<Omit<NewSession, "id" | "userId" | "createdAt">>,
+  tenantId?: string | undefined,
 ) {
   const [session] = await db
     .update(sessions)
     .set({ ...data, updatedAt: new Date() })
-    .where(eq(sessions.id, sessionId))
+    .where(
+      tenantId
+        ? and(eq(sessions.id, sessionId), eq(sessions.tenantId, tenantId))
+        : eq(sessions.id, sessionId),
+    )
     .returning();
 
   return session ? normalizeSessionRecord(session) : session;
@@ -328,8 +378,12 @@ export async function claimSessionLifecycleRunId(
   return Boolean(updated);
 }
 
-export async function deleteSession(sessionId: string) {
-  await db.delete(sessions).where(eq(sessions.id, sessionId));
+export async function deleteSession(sessionId: string, tenantId?: string | undefined) {
+  await db.delete(sessions).where(
+    tenantId
+      ? and(eq(sessions.id, sessionId), eq(sessions.tenantId, tenantId))
+      : eq(sessions.id, sessionId),
+  );
 }
 
 export async function createChat(data: NewChat) {
@@ -340,9 +394,14 @@ export async function createChat(data: NewChat) {
   return chat;
 }
 
-export async function getChatById(chatId: string) {
+export async function getChatById(chatId: string, tenantId?: string | undefined) {
+  if (!tenantId) {
+    console.warn("[tenant-guard] getChatById called without tenantId — TODO(security) thread tenantId from caller");
+  }
   return db.query.chats.findFirst({
-    where: eq(chats.id, chatId),
+    where: tenantId
+      ? and(eq(chats.id, chatId), eq(chats.tenantId, tenantId))
+      : eq(chats.id, chatId),
   });
 }
 
@@ -350,9 +409,11 @@ export async function getChatById(chatId: string) {
  * Get all chats for a session, ordered by most recent activity first.
  * Activity is tracked on chats.updatedAt and updated when new messages arrive.
  */
-export async function getChatsBySessionId(sessionId: string) {
+export async function getChatsBySessionId(sessionId: string, tenantId?: string | undefined) {
   return db.query.chats.findMany({
-    where: eq(chats.sessionId, sessionId),
+    where: tenantId
+      ? and(eq(chats.sessionId, sessionId), eq(chats.tenantId, tenantId))
+      : eq(chats.sessionId, sessionId),
     orderBy: [desc(chats.updatedAt), desc(chats.createdAt)],
   });
 }
@@ -368,6 +429,7 @@ export type ChatSummary = typeof chats.$inferSelect & {
 export async function getChatSummariesBySessionId(
   sessionId: string,
   userId: string,
+  tenantId?: string | undefined,
 ): Promise<ChatSummary[]> {
   const rows = await db
     .select({
@@ -395,7 +457,11 @@ export async function getChatSummariesBySessionId(
       chatReads,
       and(eq(chatReads.chatId, chats.id), eq(chatReads.userId, userId)),
     )
-    .where(eq(chats.sessionId, sessionId))
+    .where(
+      tenantId
+        ? and(eq(chats.sessionId, sessionId), eq(chats.tenantId, tenantId))
+        : eq(chats.sessionId, sessionId),
+    )
     .orderBy(chats.createdAt);
 
   return rows;

@@ -23,8 +23,9 @@ export async function POST(
     return Response.json({ error: "Access denied" }, { status: 403 });
   }
 
+  const genTenantId = session.activeTenantId ?? undefined;
   const { sessionId } = await params;
-  const dbSession = await getSessionById(sessionId);
+  const dbSession = await getSessionById(sessionId, genTenantId);
   if (!dbSession || dbSession.userId !== session.user.id) {
     return Response.json({ error: "Session not found" }, { status: 404 });
   }

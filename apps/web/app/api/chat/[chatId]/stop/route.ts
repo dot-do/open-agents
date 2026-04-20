@@ -24,6 +24,7 @@ export async function POST(request: Request, context: RouteContext) {
 
   const chatContext = await requireOwnedChatById({
     userId: authResult.userId,
+    tenantId: authResult.tenantId,
     chatId,
   });
   if (!chatContext.ok) {

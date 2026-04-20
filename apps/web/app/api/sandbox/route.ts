@@ -220,6 +220,7 @@ async function postHandler(req: Request) {
     const sessionContext = await requireOwnedSession({
       userId: session.user.id,
       sessionId,
+      tenantId: session.activeTenantId ?? undefined,
     });
     if (!sessionContext.ok) {
       return sessionContext.response;
@@ -402,6 +403,7 @@ async function deleteHandler(req: Request) {
 
   const sessionContext = await requireOwnedSession({
     userId: authResult.userId,
+    tenantId: authResult.tenantId,
     sessionId,
   });
   if (!sessionContext.ok) {

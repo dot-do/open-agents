@@ -62,11 +62,12 @@ function generateBranchName(username: string, name?: string | null): string {
 async function resolveSessionTitle(
   input: CreateSessionRequest,
   userId: string,
+  tenantId?: string,
 ): Promise<string> {
   if (input.title && input.title.trim()) {
     return input.title.trim();
   }
-  const usedNames = await getUsedSessionTitles(userId);
+  const usedNames = await getUsedSessionTitles(userId, tenantId);
   return getRandomCityName(usedNames);
 }
 
@@ -93,6 +94,7 @@ export async function GET(req: Request) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
+  const tenantId = session.activeTenantId ?? undefined;
   const { searchParams } = new URL(req.url);
   const rawStatus = searchParams.get("status");
   if (
@@ -135,8 +137,8 @@ export async function GET(req: Request) {
         status: "archived",
         limit,
         offset,
-      }),
-      getArchivedSessionCountByUserId(session.user.id),
+      }, tenantId),
+      getArchivedSessionCountByUserId(session.user.id, tenantId),
     ]);
 
     return Response.json({
@@ -155,14 +157,14 @@ export async function GET(req: Request) {
     const [sessions, archivedCount] = await Promise.all([
       getSessionsWithUnreadByUserId(session.user.id, {
         status: "active",
-      }),
-      getArchivedSessionCountByUserId(session.user.id),
+      }, tenantId),
+      getArchivedSessionCountByUserId(session.user.id, tenantId),
     ]);
 
     return Response.json({ sessions, archivedCount });
   }
 
-  const sessions = await getSessionsWithUnreadByUserId(session.user.id);
+  const sessions = await getSessionsWithUnreadByUserId(session.user.id, undefined, tenantId);
   return Response.json({ sessions });
 }
 
@@ -172,8 +174,10 @@ export async function POST(req: Request) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
+  const postTenantId = session.activeTenantId ?? undefined;
+
   if (isManagedTemplateTrialUser(session, req.url)) {
-    const existingSessionCount = await countSessionsByUserId(session.user.id);
+    const existingSessionCount = await countSessionsByUserId(session.user.id, postTenantId);
     if (existingSessionCount >= MANAGED_TEMPLATE_TRIAL_SESSION_LIMIT) {
       return Response.json(
         { error: MANAGED_TEMPLATE_TRIAL_SESSION_LIMIT_ERROR },
@@ -264,7 +268,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const titlePromise = resolveSessionTitle(body, session.user.id);
+    const titlePromise = resolveSessionTitle(body, session.user.id, postTenantId);
     const preferencesPromise = getUserPreferences(session.user.id);
 
     let resolvedVercelProject: VercelProjectSelection | null = null;
@@ -330,6 +334,7 @@ export async function POST(req: Request) {
       session: {
         id: nanoid(),
         userId: session.user.id,
+        tenantId: postTenantId ?? null,
         title,
         status: "running",
         repoOwner,

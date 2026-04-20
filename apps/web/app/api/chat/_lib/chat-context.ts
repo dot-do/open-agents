@@ -13,6 +13,7 @@ type AuthenticatedUserResult =
   | {
       ok: true;
       userId: string;
+      tenantId: string | undefined;
     }
   | {
       ok: false;
@@ -45,6 +46,7 @@ interface RequireOwnedSessionChatParams {
   userId: string;
   sessionId: string;
   chatId: string;
+  tenantId?: string;
   format?: ResponseFormat;
   forbiddenMessage?: string;
   requireActiveSandbox?: boolean;
@@ -54,6 +56,7 @@ interface RequireOwnedSessionChatParams {
 interface RequireOwnedChatByIdParams {
   userId: string;
   chatId: string;
+  tenantId?: string;
   format?: ResponseFormat;
   forbiddenMessage?: string;
 }
@@ -84,6 +87,7 @@ export async function requireAuthenticatedUser(
   return {
     ok: true,
     userId: session.user.id,
+    tenantId: session.activeTenantId ?? undefined,
   };
 }
 
@@ -94,6 +98,7 @@ export async function requireOwnedSessionChat(
     userId,
     sessionId,
     chatId,
+    tenantId,
     format = "json",
     forbiddenMessage = "Forbidden",
     requireActiveSandbox = false,
@@ -101,8 +106,8 @@ export async function requireOwnedSessionChat(
   } = params;
 
   const [sessionRecord, chat] = await Promise.all([
-    getSessionById(sessionId),
-    getChatById(chatId),
+    getSessionById(sessionId, tenantId),
+    getChatById(chatId, tenantId),
   ]);
 
   if (!sessionRecord) {
@@ -146,11 +151,12 @@ export async function requireOwnedChatById(
   const {
     userId,
     chatId,
+    tenantId,
     format = "json",
     forbiddenMessage = "Forbidden",
   } = params;
 
-  const chat = await getChatById(chatId);
+  const chat = await getChatById(chatId, tenantId);
   if (!chat) {
     return {
       ok: false,
@@ -158,7 +164,7 @@ export async function requireOwnedChatById(
     };
   }
 
-  const sessionRecord = await getSessionById(chat.sessionId);
+  const sessionRecord = await getSessionById(chat.sessionId, tenantId);
   if (!sessionRecord || sessionRecord.userId !== userId) {
     return {
       ok: false,

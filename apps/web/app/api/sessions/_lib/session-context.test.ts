@@ -77,7 +77,7 @@ describe("session context guards", () => {
 
     const result = await requireAuthenticatedUser();
 
-    expect(result).toEqual({ ok: true, userId: "user-1" });
+    expect(result).toEqual({ ok: true, userId: "user-1", tenantId: undefined });
   });
 
   test("requireOwnedSession returns 404 when session is missing", async () => {
