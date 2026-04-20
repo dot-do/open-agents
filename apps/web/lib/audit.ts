@@ -26,6 +26,7 @@ export type AuditAction =
   | "quota.halted"
   | "tenant.created"
   | "tenant.switched"
+  | "tenant.ownership_transferred"
   | "billing.plan_changed";
 
 export interface AuditOptions {

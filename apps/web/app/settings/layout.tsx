@@ -3,7 +3,9 @@
 import {
   Activity,
   ArrowLeft,
+  Bell,
   Cable,
+  FileText,
   Globe,
   KeyRound,
   LogOut,
@@ -100,6 +102,18 @@ const sidebarItems = [
     label: "Model Variants",
     href: "/settings/model-variants",
     icon: SlidersHorizontal,
+  },
+  {
+    id: "notifications",
+    label: "Notifications",
+    href: "/settings/notifications",
+    icon: Bell,
+  },
+  {
+    id: "templates",
+    label: "Templates",
+    href: "/settings/templates",
+    icon: FileText,
   },
   {
     id: "api-keys",

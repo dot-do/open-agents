@@ -14,6 +14,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { fetcher } from "@/lib/swr";
 
 type Role = "owner" | "admin" | "member" | "viewer";
@@ -28,9 +35,25 @@ type TenantsInfo = {
   }>;
 };
 
+type MemberRow = {
+  userId: string;
+  role: Role;
+  username: string;
+  name: string | null;
+  email: string | null;
+};
+
+type MembersResponse = {
+  members: MemberRow[];
+};
+
 export default function DangerZonePage() {
   const router = useRouter();
   const { data: tenantsInfo } = useSWR<TenantsInfo>("/api/tenants", fetcher);
+  const { data: membersData } = useSWR<MembersResponse>(
+    "/api/tenant/members",
+    fetcher,
+  );
 
   const activeId = tenantsInfo?.activeTenantId ?? null;
   const active = tenantsInfo?.memberships.find(
@@ -44,6 +67,48 @@ export default function DangerZonePage() {
   const [confirmText, setConfirmText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Transfer ownership state
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferTarget, setTransferTarget] = useState("");
+  const [transferConfirmText, setTransferConfirmText] = useState("");
+  const [transferBusy, setTransferBusy] = useState(false);
+  const [transferError, setTransferError] = useState<string | null>(null);
+  const [transferSuccess, setTransferSuccess] = useState(false);
+
+  // Other members eligible for transfer (non-owner members).
+  const transferCandidates =
+    membersData?.members.filter((m) => m.role !== "owner") ?? [];
+  const transferConfirmMatches =
+    transferConfirmText === slug && slug.length > 0;
+
+  const onTransfer = useCallback(async () => {
+    if (!transferTarget) return;
+    setTransferBusy(true);
+    setTransferError(null);
+    setTransferSuccess(false);
+    try {
+      const res = await fetch("/api/tenant/transfer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newOwnerUserId: transferTarget }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        setTransferError(json.error ?? "Transfer failed");
+        return;
+      }
+      setTransferSuccess(true);
+      setTransferOpen(false);
+      setTransferTarget("");
+      setTransferConfirmText("");
+      router.refresh();
+    } catch (e) {
+      setTransferError(e instanceof Error ? e.message : "Transfer failed");
+    } finally {
+      setTransferBusy(false);
+    }
+  }, [transferTarget, slug, router]);
 
   const onExport = useCallback(() => {
     if (!activeId) return;
@@ -118,6 +183,105 @@ export default function DangerZonePage() {
         <Button variant="outline" size="sm" onClick={onExport}>
           Export all data
         </Button>
+      </section>
+
+      {transferSuccess && (
+        <p className="text-sm text-green-600">
+          Ownership transferred successfully. You have been demoted to admin.
+        </p>
+      )}
+
+      <section className="space-y-3 rounded-md border border-border p-4">
+        <h2 className="text-sm font-medium">Transfer ownership</h2>
+        <p className="text-sm text-muted-foreground">
+          Transfer ownership of this workspace to another member. You will be
+          demoted to admin.
+        </p>
+        {transferCandidates.length === 0 ? (
+          <p className="text-sm text-muted-foreground italic">
+            No other members to transfer to. Invite someone first.
+          </p>
+        ) : (
+          <Dialog
+            open={transferOpen}
+            onOpenChange={(open) => {
+              setTransferOpen(open);
+              if (!open) {
+                setTransferTarget("");
+                setTransferConfirmText("");
+                setTransferError(null);
+              }
+            }}
+          >
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm">
+                Transfer ownership
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Transfer ownership</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Select the new owner and type the workspace slug{" "}
+                  <code className="font-mono">{slug}</code> to confirm.
+                </p>
+                <div className="space-y-2">
+                  <Label htmlFor="transfer-target">New owner</Label>
+                  <Select
+                    value={transferTarget}
+                    onValueChange={setTransferTarget}
+                  >
+                    <SelectTrigger id="transfer-target">
+                      <SelectValue placeholder="Select a member" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {transferCandidates.map((m) => (
+                        <SelectItem key={m.userId} value={m.userId}>
+                          {m.name ?? m.username} ({m.role})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="transfer-confirm-slug">
+                    Type slug to confirm
+                  </Label>
+                  <Input
+                    id="transfer-confirm-slug"
+                    value={transferConfirmText}
+                    onChange={(e) => setTransferConfirmText(e.target.value)}
+                    placeholder={slug}
+                    autoComplete="off"
+                  />
+                </div>
+                {transferError && (
+                  <p className="text-sm text-destructive">{transferError}</p>
+                )}
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setTransferOpen(false)}
+                  disabled={transferBusy}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  disabled={
+                    !transferTarget || !transferConfirmMatches || transferBusy
+                  }
+                  onClick={onTransfer}
+                >
+                  {transferBusy ? "Transferring..." : "Transfer ownership"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
       </section>
 
       <section className="space-y-3 rounded-md border border-destructive/50 p-4">

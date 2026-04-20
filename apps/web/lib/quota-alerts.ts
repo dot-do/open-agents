@@ -10,6 +10,7 @@ import {
   users,
 } from "@/lib/db/schema";
 import { escapeHtml, sendEmail } from "@/lib/email";
+import { shouldNotify } from "@/lib/notification-prefs";
 
 export type QuotaAlertKind = "daily_cost" | "monthly_minutes";
 export type QuotaAlertThreshold = 80 | 100;
@@ -109,7 +110,7 @@ export async function dispatchQuotaAlert(
     .limit(1);
 
   const ownerRows = await db
-    .select({ email: users.email })
+    .select({ email: users.email, userId: users.id })
     .from(memberships)
     .innerJoin(users, eq(users.id, memberships.userId))
     .where(
@@ -120,9 +121,18 @@ export async function dispatchQuotaAlert(
       ),
     );
 
-  const recipients = ownerRows
-    .map((r) => r.email)
-    .filter((e): e is string => Boolean(e));
+  // Map QuotaAlertKind to notification event names.
+  const notifEvent = threshold >= 100 ? "quota.halted" : "quota.warning";
+
+  // Filter out owners who have opted out of this notification event.
+  const eligibleOwners = await Promise.all(
+    ownerRows.map(async (r) => {
+      const notify = await shouldNotify(tenantId, r.userId, notifEvent);
+      return notify ? r.email : null;
+    }),
+  );
+
+  const recipients = eligibleOwners.filter((e): e is string => Boolean(e));
 
   if (recipients.length === 0) {
     // Idempotency row is already written; downgrading it would re-fire

@@ -914,3 +914,69 @@ export const tenantCustomDomains = pgTable(
 export type TenantCustomDomain = typeof tenantCustomDomains.$inferSelect;
 export type NewTenantCustomDomain = typeof tenantCustomDomains.$inferInsert;
 
+// ---------------------------------------------------------------------------
+// Session templates — reusable presets for session creation (model, prompt, skills).
+// ---------------------------------------------------------------------------
+export const sessionTemplates = pgTable(
+  "session_templates",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    modelId: text("model_id"),
+    systemPrompt: text("system_prompt"),
+    skillRefs: jsonb("skill_refs").$type<GlobalSkillRef[]>(),
+    createdByUserId: text("created_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("session_templates_tenant_idx").on(table.tenantId)],
+);
+
+export type SessionTemplate = typeof sessionTemplates.$inferSelect;
+export type NewSessionTemplate = typeof sessionTemplates.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Notification preferences — per user per tenant, per event channel control.
+// Default opt-in: absence of a row means 'email'. Only explicit 'none' silences.
+// ---------------------------------------------------------------------------
+export const notificationPreferences = pgTable(
+  "notification_preferences",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    event: text("event").notNull(),
+    channel: text("channel", { enum: ["email", "none"] })
+      .notNull()
+      .default("email"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("notification_preferences_tenant_user_event_idx").on(
+      table.tenantId,
+      table.userId,
+      table.event,
+    ),
+    index("notification_preferences_tenant_user_idx").on(
+      table.tenantId,
+      table.userId,
+    ),
+  ],
+);
+
+export type NotificationPreference =
+  typeof notificationPreferences.$inferSelect;
+export type NewNotificationPreference =
+  typeof notificationPreferences.$inferInsert;
+
