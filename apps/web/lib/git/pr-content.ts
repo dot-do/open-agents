@@ -79,7 +79,7 @@ export async function resolvePullRequestContextSection(params: {
 }): Promise<string> {
   const { sessionId, appBaseUrl, tenantId } = params;
   const [sessionRecord, chats] = await Promise.all([
-    getSessionById(sessionId),
+    getSessionById(sessionId, tenantId),
     getChatsBySessionId(sessionId, tenantId),
   ]);
   const parts: string[] = [];
