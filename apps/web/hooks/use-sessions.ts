@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import useSWR, { useSWRConfig } from "swr";
 import type { Chat, Session } from "@/lib/db/schema";
 import type { VercelProjectSelection } from "@/lib/vercel/types";
+import { useSession } from "@/hooks/use-session";
 import { fetcher } from "@/lib/swr";
 
 export type SessionWithUnread = Pick<
@@ -99,8 +100,18 @@ export function useSessions(options?: {
 
   const initialData = options?.initialData;
 
+  // Include activeTenantId in the SWR key so that switching tenants
+  // busts the cache and triggers a fresh fetch instead of leaking
+  // sessions from the previous tenant.
+  const { activeTenantId } = useSession();
+  const swrKey = enabled
+    ? activeTenantId
+      ? `/api/sessions?t=${activeTenantId}`
+      : "/api/sessions"
+    : null;
+
   const { data, error, isLoading, mutate } = useSWR<SessionsResponse>(
-    enabled ? "/api/sessions" : null,
+    swrKey,
     () => fetcher<SessionsResponse>(sessionsEndpoint),
     {
       fallbackData: initialData,
