@@ -8,7 +8,7 @@ import {
   listKeys,
   type TenantApiKeyProvider,
 } from "@/lib/db/tenant-api-keys";
-import { withRateLimit } from "@/lib/rate-limit";
+import { withRateLimit, withReadRateLimit } from "@/lib/rate-limit";
 
 const ALLOWED_PROVIDERS: TenantApiKeyProvider[] = [
   "anthropic",
@@ -22,7 +22,7 @@ function canMutate(role: string): boolean {
   return role === "owner" || role === "admin";
 }
 
-export async function GET(req: NextRequest): Promise<Response> {
+async function getHandler(req: NextRequest): Promise<Response> {
   try {
     const ctx = await requireTenantCtx(req);
     const keys = await listKeys(ctx);
@@ -77,5 +77,7 @@ async function postHandler(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
+
+export const GET = withReadRateLimit(getHandler);
 
 export const POST = withRateLimit(postHandler, { category: "keys:write" });

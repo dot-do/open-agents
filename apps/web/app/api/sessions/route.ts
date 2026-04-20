@@ -1,3 +1,4 @@
+import type { NextRequest } from "next/server";
 import { nanoid } from "nanoid";
 import {
   countSessionsByUserId,
@@ -24,6 +25,7 @@ import {
   MANAGED_TEMPLATE_TRIAL_SESSION_LIMIT_ERROR,
 } from "@/lib/managed-template-trial";
 import { getTenantQuotas } from "@/lib/quotas";
+import { withReadRateLimit } from "@/lib/rate-limit";
 import { listMatchingVercelProjects } from "@/lib/vercel/projects";
 import { getUserVercelToken } from "@/lib/vercel/token";
 import {
@@ -89,7 +91,7 @@ function parseNonNegativeInteger(value: string | null): number | null {
   return Number(value);
 }
 
-export async function GET(req: Request) {
+async function getHandler(req: NextRequest) {
   const session = await getServerSession();
   if (!session?.user) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
@@ -168,6 +170,8 @@ export async function GET(req: Request) {
   const sessions = await getSessionsWithUnreadByUserId(session.user.id, undefined, tenantId);
   return Response.json({ sessions });
 }
+
+export const GET = withReadRateLimit(getHandler);
 
 export async function POST(req: Request) {
   const session = await getServerSession();

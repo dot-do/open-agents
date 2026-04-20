@@ -3,6 +3,7 @@ import {
   requireTenantCtx,
   TenantAccessError,
 } from "@/lib/db/tenant-context";
+import { withReadRateLimit } from "@/lib/rate-limit";
 import {
   createWebhook,
   listRecentDeliveries,
@@ -13,7 +14,7 @@ function canMutate(role: string): boolean {
   return role === "owner" || role === "admin";
 }
 
-export async function GET(req: NextRequest): Promise<Response> {
+async function getHandler(req: NextRequest): Promise<Response> {
   try {
     const ctx = await requireTenantCtx(req);
     const url = new URL(req.url);
@@ -34,6 +35,8 @@ export async function GET(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
+
+export const GET = withReadRateLimit(getHandler);
 
 export async function POST(req: NextRequest): Promise<Response> {
   try {

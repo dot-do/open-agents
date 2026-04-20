@@ -1,12 +1,14 @@
+import type { NextRequest } from "next/server";
 import { filterModelsForSession } from "@/lib/model-access";
 import { filterAllowedModels } from "@/lib/model-gate";
 import { fetchAvailableLanguageModelsWithContext } from "@/lib/models-with-context";
+import { withReadRateLimit } from "@/lib/rate-limit";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { resolveTenantId } from "@/lib/session/resolve-tenant";
 
 const CACHE_CONTROL = "private, no-store";
 
-export async function GET(req: Request) {
+async function getHandler(req: NextRequest) {
   try {
     const [session, allModels] = await Promise.all([
       getServerSession(),
@@ -41,3 +43,5 @@ export async function GET(req: Request) {
     );
   }
 }
+
+export const GET = withReadRateLimit(getHandler);

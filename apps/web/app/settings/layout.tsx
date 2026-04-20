@@ -4,6 +4,7 @@ import {
   Activity,
   ArrowLeft,
   Cable,
+  Globe,
   KeyRound,
   LogOut,
   Menu,
@@ -64,6 +65,18 @@ function ConnectionsPageSkeleton() {
 }
 
 const sidebarItems = [
+  {
+    id: "general",
+    label: "General",
+    href: "/settings/general",
+    icon: SettingsIcon,
+  },
+  {
+    id: "domains",
+    label: "Domains",
+    href: "/settings/domains",
+    icon: Globe,
+  },
   {
     id: "profile",
     label: "Profile",

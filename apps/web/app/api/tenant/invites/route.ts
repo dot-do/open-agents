@@ -1,12 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireTenantCtx, TenantAccessError } from "@/lib/db/tenant-context";
 import { createInvite, listInvites } from "@/lib/invites";
-import { withRateLimit } from "@/lib/rate-limit";
+import { withRateLimit, withReadRateLimit } from "@/lib/rate-limit";
 import { RbacError, requireRole, type Role } from "@/lib/rbac";
 
 const VALID_ROLES: Role[] = ["owner", "admin", "member", "viewer"];
 
-export async function GET(req: NextRequest): Promise<Response> {
+async function getHandler(req: NextRequest): Promise<Response> {
   try {
     const ctx = await requireTenantCtx(req);
     requireRole(ctx, "admin");
@@ -68,5 +68,7 @@ async function postHandler(req: NextRequest): Promise<Response> {
     throw err;
   }
 }
+
+export const GET = withReadRateLimit(getHandler);
 
 export const POST = withRateLimit(postHandler, { category: "invites:write" });

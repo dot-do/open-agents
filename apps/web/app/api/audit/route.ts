@@ -3,6 +3,7 @@ import { and, desc, eq, lt } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { auditEvents } from "@/lib/db/schema";
 import { requireTenantCtx, TenantAccessError } from "@/lib/db/tenant-context";
+import { withReadRateLimit } from "@/lib/rate-limit";
 
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 200;
@@ -14,7 +15,7 @@ const MAX_LIMIT = 200;
  * cursor is the `createdAt` of the last row from the previous page (ISO
  * string). Capped at 200 rows per request.
  */
-export async function GET(req: NextRequest): Promise<Response> {
+async function getHandler(req: NextRequest): Promise<Response> {
   let ctx;
   try {
     ctx = await requireTenantCtx(req);
@@ -76,3 +77,5 @@ export async function GET(req: NextRequest): Promise<Response> {
     },
   });
 }
+
+export const GET = withReadRateLimit(getHandler);

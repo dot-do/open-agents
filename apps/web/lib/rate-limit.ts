@@ -148,6 +148,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { getPlan, getRateLimitForPlan } from "./billing";
 import { requireTenantCtx } from "./db/tenant-context";
+import { addRateLimitHeaders } from "./rate-limit-headers";
 
 /**
  * Wrap a route handler with per-tenant rate limiting. Applies plan-scoped
@@ -184,6 +185,47 @@ export function withRateLimit<Args extends unknown[]>(
         },
       );
     }
-    return (await handler(req, ...args)) as Response;
+    const response = (await handler(req, ...args)) as Response;
+    return addRateLimitHeaders(response, result);
+  };
+}
+
+/**
+ * Lighter rate-limit wrapper for read (GET) routes. Uses 5x the plan's
+ * write cap to allow more headroom for reads while still preventing abuse.
+ * Adds X-RateLimit-* headers to every response.
+ */
+export function withReadRateLimit<Args extends unknown[]>(
+  handler: (req: NextRequest, ...args: Args) => Promise<Response> | Response,
+): (req: NextRequest, ...args: Args) => Promise<Response> {
+  return async (req, ...args) => {
+    let ctx;
+    try {
+      ctx = await requireTenantCtx(req);
+    } catch {
+      return handler(req, ...args) as Promise<Response>;
+    }
+    const plan = await getPlan(ctx).catch(() => "free" as const);
+    const baseCfg = getRateLimitForPlan(plan);
+    const readCfg = { rpm: baseCfg.rpm * 5, burst: baseCfg.burst * 5 };
+    const key = `rl:tenant:${ctx.tenantId}:read`;
+    const result = await rateLimit(key, readCfg);
+    if (!result.allowed) {
+      return new NextResponse(
+        JSON.stringify({ error: "rate_limited" }),
+        {
+          status: 429,
+          headers: {
+            "content-type": "application/json",
+            "Retry-After": String(Math.ceil(result.resetMs / 1000) || 1),
+            "X-RateLimit-Limit": String(result.limit),
+            "X-RateLimit-Remaining": String(result.remaining),
+            "X-RateLimit-Reset": String(Date.now() + result.resetMs),
+          },
+        },
+      );
+    }
+    const response = (await handler(req, ...args)) as Response;
+    return addRateLimitHeaders(response, result);
   };
 }

@@ -1,9 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { listMembershipsForTenant } from "@/lib/db/memberships";
 import { requireTenantCtx, TenantAccessError } from "@/lib/db/tenant-context";
+import { withReadRateLimit } from "@/lib/rate-limit";
 import { RbacError, requireRole } from "@/lib/rbac";
 
-export async function GET(req: NextRequest): Promise<Response> {
+async function getHandler(req: NextRequest): Promise<Response> {
   try {
     const ctx = await requireTenantCtx(req);
     requireRole(ctx, "admin");
@@ -19,3 +20,5 @@ export async function GET(req: NextRequest): Promise<Response> {
     throw err;
   }
 }
+
+export const GET = withReadRateLimit(getHandler);

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { NextRequest } from "next/server";
 
 interface MockGatewayModel extends Record<string, unknown> {
   id: string;
@@ -115,7 +116,7 @@ describe("/api/models context window enrichment", () => {
     };
 
     const { GET } = await routeModulePromise;
-    const response = await GET(new Request("http://localhost/api/models"));
+    const response = await GET(new NextRequest("http://localhost/api/models"));
 
     expect(response.ok).toBe(true);
 
@@ -151,7 +152,7 @@ describe("/api/models context window enrichment", () => {
 
     const { GET } = await routeModulePromise;
     const response = await GET(
-      new Request("https://open-agents.dev/api/models"),
+      new NextRequest("https://open-agents.dev/api/models"),
     );
     const body = (await response.json()) as {
       models: Array<{ id: string }>;
@@ -183,7 +184,7 @@ describe("/api/models context window enrichment", () => {
     };
 
     const { GET } = await routeModulePromise;
-    const response = await GET(new Request("http://localhost/api/models"));
+    const response = await GET(new NextRequest("http://localhost/api/models"));
 
     expect(response.ok).toBe(true);
 
@@ -225,7 +226,7 @@ describe("/api/models context window enrichment", () => {
     };
 
     const { GET } = await routeModulePromise;
-    const response = await GET(new Request("http://localhost/api/models"));
+    const response = await GET(new NextRequest("http://localhost/api/models"));
 
     expect(response.ok).toBe(true);
 
@@ -282,7 +283,7 @@ describe("/api/models context window enrichment", () => {
     };
 
     const { GET } = await routeModulePromise;
-    const response = await GET(new Request("http://localhost/api/models"));
+    const response = await GET(new NextRequest("http://localhost/api/models"));
 
     expect(response.ok).toBe(true);
 
