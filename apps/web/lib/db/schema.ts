@@ -885,7 +885,7 @@ export type NewTenantQuotaAlert = typeof tenantQuotaAlerts.$inferInsert;
 // Custom domains — tenant-scoped vanity domains with DNS TXT verification.
 // Actual Vercel domain provisioning is infrastructure-level and NOT handled
 // by this table; see apps/web/lib/custom-domains.ts for the verification
-// service and middleware.ts for routing notes.
+// service and proxy.ts for routing notes.
 // ---------------------------------------------------------------------------
 export const tenantCustomDomains = pgTable(
   "tenant_custom_domains",
