@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { eq, and, ne } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { tenants } from "@/lib/db/schema";
-import { requireTenantCtx, TenantAccessError } from "@/lib/db/tenant-context";
+import { requireTenantCtx, TenantAccessError, tenantErrorResponse } from "@/lib/db/tenant-context";
 import { RbacError, requireRole } from "@/lib/rbac";
 
 /**
@@ -13,9 +13,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   try {
     ctx = await requireTenantCtx(req);
   } catch (err) {
-    if (err instanceof TenantAccessError) {
-      return NextResponse.json({ error: err.message }, { status: 401 });
-    }
+    if (err instanceof TenantAccessError) return tenantErrorResponse(err);
     throw err;
   }
 
@@ -53,9 +51,7 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     if (err instanceof RbacError) {
       return NextResponse.json({ error: err.message }, { status: 403 });
     }
-    if (err instanceof TenantAccessError) {
-      return NextResponse.json({ error: err.message }, { status: 401 });
-    }
+    if (err instanceof TenantAccessError) return tenantErrorResponse(err);
     throw err;
   }
 

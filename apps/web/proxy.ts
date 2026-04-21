@@ -17,7 +17,7 @@ function wantsSharedMarkdown(acceptHeader: string | null): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Tenant auth gating (originally in middleware.ts)
+// Tenant auth gating (merged from the former middleware into proxy.ts)
 // ---------------------------------------------------------------------------
 
 /**
@@ -117,7 +117,7 @@ export async function proxy(request: NextRequest) {
 // Custom domain routing (not yet implemented — requires Vercel domain config)
 // ---------------------------------------------------------------------------
 // When custom domains are enabled, check Host header against verified custom
-// domains in the /api/* path above. See middleware.ts comments for full spec.
+// domains in the /api/* path above. See the custom domains feature spec.
 // ---------------------------------------------------------------------------
 
 export const config = {

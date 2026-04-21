@@ -40,10 +40,36 @@ export type TenantContext = {
   scope?: TokenScope;
 };
 
+/**
+ * Error codes returned by tenant-context helpers so API routes and UI can
+ * distinguish recoverable situations from hard failures.
+ *
+ * - `no_auth`               — no session / unauthenticated
+ * - `no_memberships`        — user exists but has zero tenant memberships
+ * - `membership_revoked`    — activeTenantId pointed at a tenant the user
+ *                             no longer belongs to (fallback succeeded)
+ * - `access_denied`         — generic denial (PAT revoked, wrong tenant, etc.)
+ */
+export type TenantErrorCode =
+  | "no_auth"
+  | "no_memberships"
+  | "membership_revoked"
+  | "access_denied";
+
 export class TenantAccessError extends Error {
-  constructor(message: string) {
+  code: TenantErrorCode;
+  /** Optional redirect hint for the frontend. */
+  redirect?: string;
+
+  constructor(
+    message: string,
+    code: TenantErrorCode = "access_denied",
+    redirect?: string,
+  ) {
     super(message);
     this.name = "TenantAccessError";
+    this.code = code;
+    this.redirect = redirect;
   }
 }
 
@@ -63,7 +89,11 @@ export async function requireTenantCtx(
   const session = await getSessionFromReq(req);
   const userId = session?.user?.id;
   if (!userId) {
-    throw new TenantAccessError("No authenticated user on request");
+    throw new TenantAccessError(
+      "No authenticated user on request",
+      "no_auth",
+      "/login",
+    );
   }
 
   const activeTenantId = session?.activeTenantId;
@@ -88,8 +118,12 @@ export async function requireTenantCtx(
     }
     // Session points at a tenant the user no longer belongs to — fall through
     // to the first-membership fallback rather than 403'ing on a stale cookie.
+    console.warn(
+      `[tenant-context] activeTenantId ${activeTenantId} revoked for user ${userId}, falling back`,
+    );
   }
 
+  // Fallback: pick the user's earliest membership.
   const rows = await db
     .select({
       tenantId: memberships.tenantId,
@@ -104,6 +138,8 @@ export async function requireTenantCtx(
   if (!row) {
     throw new TenantAccessError(
       `User ${userId} has no tenant memberships`,
+      "no_memberships",
+      "/create-workspace",
     );
   }
 
@@ -244,4 +280,28 @@ export function requireScope(ctx: TenantContext, min: TokenScope): void {
       `PAT scope '${ctx.scope}' insufficient — '${min}' or higher required`,
     );
   }
+}
+
+/**
+ * Build a structured JSON Response from a TenantAccessError. Use this in API
+ * route catch blocks instead of returning a bare `{ error: string }` so
+ * frontend callers can programmatically redirect users to recovery flows.
+ *
+ * ```ts
+ * } catch (err) {
+ *   if (err instanceof TenantAccessError) return tenantErrorResponse(err);
+ *   throw err;
+ * }
+ * ```
+ */
+export function tenantErrorResponse(err: TenantAccessError): Response {
+  const status = err.code === "no_auth" ? 401 : 403;
+  return Response.json(
+    {
+      error: err.code,
+      message: err.message,
+      ...(err.redirect ? { redirect: err.redirect } : {}),
+    },
+    { status },
+  );
 }
