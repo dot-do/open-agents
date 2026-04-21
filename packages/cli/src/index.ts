@@ -105,6 +105,22 @@ templates
     console.log(JSON.stringify(data, null, 2));
   });
 
+// ── tokens ────────────────────────────────────────────────────────────
+
+const token = program.command("token").description("API token management");
+
+token
+  .command("rotate <id>")
+  .description("Rotate a Personal Access Token (revoke + re-issue)")
+  .action(async (id: string) => {
+    const data = await apiRequest("POST", `/api/tenant/api-tokens/${id}/rotate`) as Record<string, unknown>;
+    if (data && typeof data.display_token === "string") {
+      console.log(`New token (copy now — shown once):\n${data.display_token}`);
+    } else {
+      console.log(JSON.stringify(data, null, 2));
+    }
+  });
+
 // ── run ────────────────────────────────────────────────────────────────
 
 program.parseAsync(process.argv).catch((err: Error) => {

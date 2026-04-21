@@ -8,6 +8,7 @@ import {
   KeyRound,
   Loader2,
   Plus,
+  RefreshCw,
   Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -198,6 +199,34 @@ export default function ApiTokensPage() {
     setDisplayTokenName("");
     setCopied(false);
   }, []);
+
+  const onRotate = useCallback(
+    async (id: string, tokenName: string) => {
+      if (
+        !confirm(
+          `Rotate "${tokenName}"? The current token will be revoked immediately and a new one will be issued.`,
+        )
+      ) {
+        return;
+      }
+      try {
+        const res = await fetch(`/api/tenant/api-tokens/${id}/rotate`, {
+          method: "POST",
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          throw new Error(body?.error ?? "Failed to rotate token");
+        }
+        const data = await res.json();
+        setDisplayToken(data.display_token ?? null);
+        setDisplayTokenName(tokenName);
+        await load();
+      } catch (err) {
+        alert(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [load],
+  );
 
   const onRevoke = useCallback(
     async (id: string, tokenName: string) => {
@@ -430,7 +459,17 @@ export default function ApiTokensPage() {
                         {status.label}
                       </span>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="flex gap-1">
+                      {!t.revokedAt ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onRotate(t.id, t.name)}
+                          aria-label="Rotate token"
+                        >
+                          <RefreshCw className="h-4 w-4" />
+                        </Button>
+                      ) : null}
                       <Button
                         variant="ghost"
                         size="sm"

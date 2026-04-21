@@ -109,7 +109,7 @@ export function compareScope(actual: TokenScope, min: TokenScope): boolean {
  */
 async function tryAudit(
   ctx: TenantContext,
-  action: "apikey.created" | "apikey.revoked",
+  action: "apikey.created" | "apikey.revoked" | "apikey.rotated",
   target: string,
   metadata: Record<string, unknown>,
 ): Promise<void> {
@@ -228,6 +228,62 @@ export async function revokeToken(
     scope: row.scope,
   });
   return toDTO(row);
+}
+
+/**
+ * Rotate a PAT: revoke the old token and create a new one with the same
+ * name, scope, and expiry settings. Returns the new plaintext (one-time
+ * display, same as create). The old token is immediately invalidated.
+ */
+export async function rotateToken(
+  ctx: TenantContext,
+  tokenId: string,
+): Promise<CreateTokenResult | null> {
+  // 1. Look up the existing (active) token.
+  const existing = (await db
+    .select()
+    .from(tenantApiTokens)
+    .where(
+      and(
+        eq(tenantApiTokens.id, tokenId),
+        eq(tenantApiTokens.tenantId, ctx.tenantId),
+        isNull(tenantApiTokens.revokedAt),
+      ),
+    )
+    .limit(1)) as (typeof tenantApiTokens.$inferSelect)[];
+
+  const old = existing[0];
+  if (!old) return null;
+
+  // 2. Revoke old token.
+  await db
+    .update(tenantApiTokens)
+    .set({ revokedAt: new Date() })
+    .where(eq(tenantApiTokens.id, old.id));
+
+  // 3. Compute remaining expiry (preserve the original window, not wall-clock).
+  let expiresInDays: number | null = null;
+  if (old.expiresAt) {
+    const remainingMs = old.expiresAt.getTime() - old.createdAt.getTime();
+    expiresInDays = Math.max(1, Math.round(remainingMs / (24 * 60 * 60 * 1000)));
+  }
+
+  // 4. Create replacement token with same name/scope/expiry.
+  const result = await createToken(ctx, {
+    name: old.name,
+    scope: old.scope as TokenScope,
+    expiresInDays,
+  });
+
+  // 5. Audit with both old and new token IDs.
+  await tryAudit(ctx, "apikey.rotated", result.id, {
+    kind: "pat",
+    oldTokenId: old.id,
+    newTokenId: result.id,
+    scope: old.scope,
+  });
+
+  return result;
 }
 
 /**

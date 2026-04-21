@@ -38,6 +38,13 @@ export type TenantContext = {
   via?: "pat";
   /** PAT scope when `via === "pat"`; undefined for session-auth callers. */
   scope?: TokenScope;
+  /**
+   * `true` when `activeTenantId` from the session pointed to a tenant whose
+   * membership was revoked, and the context fell back to the next available
+   * membership. Route handlers should check this flag and refresh the session
+   * cookie with the new `tenantId` so subsequent requests avoid the fallback.
+   */
+  stale?: boolean;
 };
 
 /**
@@ -96,6 +103,7 @@ export async function requireTenantCtx(
     );
   }
 
+  let staleFallback = false;
   const activeTenantId = session?.activeTenantId;
   if (activeTenantId) {
     const rows = await db
@@ -118,9 +126,16 @@ export async function requireTenantCtx(
     }
     // Session points at a tenant the user no longer belongs to — fall through
     // to the first-membership fallback rather than 403'ing on a stale cookie.
+    // Structured log so observability tooling can track session refreshes.
     console.warn(
-      `[tenant-context] activeTenantId ${activeTenantId} revoked for user ${userId}, falling back`,
+      JSON.stringify({
+        event: "tenant.session.refreshed",
+        userId,
+        staleTenantId: activeTenantId,
+        reason: "membership_revoked",
+      }),
     );
+    staleFallback = true;
   }
 
   // Fallback: pick the user's earliest membership.
@@ -143,10 +158,22 @@ export async function requireTenantCtx(
     );
   }
 
+  if (staleFallback) {
+    console.warn(
+      JSON.stringify({
+        event: "tenant.session.refreshed",
+        userId,
+        staleTenantId: activeTenantId,
+        newTenantId: row.tenantId,
+      }),
+    );
+  }
+
   return {
     tenantId: row.tenantId,
     userId,
     role: row.role as Role,
+    ...(staleFallback ? { stale: true } : {}),
   };
 }
 
