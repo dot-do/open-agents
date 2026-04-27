@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { NextRequest } from "next/server";
 import { SESSION_COOKIE_NAME } from "@/lib/session/constants";
 
+mock.module("server-only", () => ({}));
+
 const cookieValues = new Map<string, string>();
 const deletedCookies: string[] = [];
 
@@ -52,6 +54,17 @@ mock.module("@/lib/crypto", () => ({
 
 mock.module("@/lib/jwe/encrypt", () => ({
   encryptJWE: encryptJWEMock,
+}));
+
+mock.module("@/lib/db/memberships", () => ({
+  getDefaultMembershipForUser: async () => ({
+    tenantId: "tenant-1",
+    role: "owner",
+  }),
+}));
+
+mock.module("@/lib/tenants", () => ({
+  createPersonalTenantForUser: async () => {},
 }));
 
 const routeModulePromise = import("./route");
