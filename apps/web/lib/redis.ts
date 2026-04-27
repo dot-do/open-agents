@@ -148,3 +148,184 @@ export function createRedisClient(clientName = "redis-client"): Redis {
 
   return client;
 }
+
+// ---------------------------------------------------------------------------
+// Circuit breaker — prevents hammering a dead Redis.
+//
+// States:
+//   CLOSED    — normal operation, all calls go through
+//   OPEN      — Redis is presumed down, calls return null / skip immediately
+//   HALF_OPEN — one probe request is allowed through to test recovery
+// ---------------------------------------------------------------------------
+
+export type CircuitState = "CLOSED" | "OPEN" | "HALF_OPEN";
+
+interface CircuitBreakerConfig {
+  /** Consecutive failures before tripping to OPEN. */
+  failureThreshold: number;
+  /** Milliseconds to stay OPEN before moving to HALF_OPEN. */
+  resetTimeout: number;
+  /** Consecutive successes in HALF_OPEN before returning to CLOSED. */
+  successThreshold: number;
+}
+
+const DEFAULT_CIRCUIT_CONFIG: CircuitBreakerConfig = {
+  failureThreshold: 5,
+  resetTimeout: 30_000,
+  successThreshold: 2,
+};
+
+class RedisCircuitBreaker {
+  private state: CircuitState = "CLOSED";
+  private consecutiveFailures = 0;
+  private consecutiveSuccesses = 0;
+  private openedAt = 0;
+  private loggedOpen = false;
+
+  constructor(private readonly config: CircuitBreakerConfig = DEFAULT_CIRCUIT_CONFIG) {}
+
+  getState(): CircuitState {
+    // Automatically transition OPEN -> HALF_OPEN after resetTimeout
+    if (
+      this.state === "OPEN" &&
+      Date.now() - this.openedAt >= this.config.resetTimeout
+    ) {
+      this.state = "HALF_OPEN";
+      this.consecutiveSuccesses = 0;
+    }
+    return this.state;
+  }
+
+  /**
+   * Returns true if the call should be allowed through. Returns false when the
+   * circuit is OPEN (fail-open: callers should return null/skip).
+   */
+  allowRequest(): boolean {
+    const current = this.getState();
+    if (current === "CLOSED") return true;
+    if (current === "HALF_OPEN") return true; // probe request
+    return false; // OPEN
+  }
+
+  recordSuccess(): void {
+    if (this.state === "HALF_OPEN") {
+      this.consecutiveSuccesses += 1;
+      if (this.consecutiveSuccesses >= this.config.successThreshold) {
+        this.state = "CLOSED";
+        this.consecutiveFailures = 0;
+        this.consecutiveSuccesses = 0;
+        this.loggedOpen = false;
+        console.log(
+          JSON.stringify({ level: "info", event: "redis.circuit.closed" }),
+        );
+      }
+    } else {
+      this.consecutiveFailures = 0;
+    }
+  }
+
+  recordFailure(): void {
+    this.consecutiveSuccesses = 0;
+    this.consecutiveFailures += 1;
+
+    if (this.state === "HALF_OPEN") {
+      // Probe failed — go back to OPEN
+      this.state = "OPEN";
+      this.openedAt = Date.now();
+      return;
+    }
+
+    if (this.consecutiveFailures >= this.config.failureThreshold) {
+      this.state = "OPEN";
+      this.openedAt = Date.now();
+      if (!this.loggedOpen) {
+        this.loggedOpen = true;
+        console.log(
+          JSON.stringify({
+            level: "warn",
+            event: "redis.circuit.open",
+            consecutiveFailures: this.consecutiveFailures,
+          }),
+        );
+      }
+    }
+  }
+}
+
+/** Singleton circuit breaker shared across all Redis callers. */
+const circuitBreaker = new RedisCircuitBreaker();
+
+/**
+ * Returns the current circuit breaker state. Used by the health endpoint.
+ */
+export function getCircuitState(): CircuitState {
+  return circuitBreaker.getState();
+}
+
+/**
+ * Wraps a Redis client with circuit breaker logic. When the circuit is OPEN,
+ * all commands immediately return `null` (fail-open). The returned object is
+ * a Proxy over the real Redis instance so callers can use it transparently.
+ */
+export function createCircuitBreakerClient(
+  clientName = "redis-client",
+): Redis {
+  const realClient = createRedisClient(clientName);
+
+  return new Proxy(realClient, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver);
+
+      // Only intercept function calls (Redis commands)
+      if (typeof value !== "function") return value;
+
+      // Don't intercept internal/lifecycle methods
+      const methodName = String(prop);
+      const passthroughMethods = new Set([
+        "on",
+        "once",
+        "emit",
+        "removeListener",
+        "removeAllListeners",
+        "quit",
+        "disconnect",
+        "connect",
+        "status",
+      ]);
+      if (passthroughMethods.has(methodName) || methodName.startsWith("_")) {
+        return value;
+      }
+
+      return function circuitBreakerWrapper(
+        this: unknown,
+        ...args: unknown[]
+      ): unknown {
+        if (!circuitBreaker.allowRequest()) {
+          // Circuit is OPEN — fail-open immediately
+          return Promise.resolve(null);
+        }
+
+        const result = (value as (...a: unknown[]) => unknown).apply(
+          target,
+          args,
+        );
+
+        // If it's a promise (most Redis commands), track success/failure
+        if (result && typeof (result as Promise<unknown>).then === "function") {
+          return (result as Promise<unknown>).then(
+            (res) => {
+              circuitBreaker.recordSuccess();
+              return res;
+            },
+            (err) => {
+              circuitBreaker.recordFailure();
+              throw err;
+            },
+          );
+        }
+
+        return result;
+      };
+    },
+  });
+}

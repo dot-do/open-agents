@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { checkBotId } from "botid/server";
+import { withRequestContext } from "@/lib/request-context";
 import { botIdConfig } from "@/lib/botid";
 import { connectSandbox, type SandboxState } from "@open-harness/sandbox";
 import { withRateLimit } from "@/lib/rate-limit";
@@ -451,7 +452,7 @@ async function deleteHandler(req: Request) {
 }
 
 export const POST = withRateLimit(
-  postHandler as (req: NextRequest) => Promise<Response>,
+  withRequestContext(postHandler) as (req: NextRequest) => Promise<Response>,
   { category: "sandbox:write" },
 ) as (req: Request) => Promise<Response>;
 

@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { nanoid } from "nanoid";
+import { withRequestContext } from "@/lib/request-context";
 import {
   countSessionsByUserId,
   createSessionWithInitialChat,
@@ -173,9 +174,13 @@ async function getHandler(req: NextRequest) {
   return Response.json({ sessions });
 }
 
-export const GET = withReadRateLimit(getHandler);
+export const GET = withReadRateLimit(
+  withRequestContext(getHandler as (req: Request) => Promise<Response>) as (
+    req: NextRequest,
+  ) => Promise<Response>,
+);
 
-export async function POST(req: Request) {
+export const POST = withRequestContext(async function POST(req: Request) {
   const session = await getServerSession();
   if (!session?.user) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
@@ -405,4 +410,4 @@ export async function POST(req: Request) {
       { status: 500 },
     );
   }
-}
+});

@@ -3,6 +3,7 @@ import { createUIMessageStreamResponse, type InferUIMessageChunk } from "ai";
 import { botIdConfig } from "@/lib/botid";
 import { start } from "workflow/api";
 import type { WebAgentUIMessage } from "@/app/types";
+import { withRequestContext } from "@/lib/request-context";
 import {
   compareAndSetChatActiveStreamId,
   countUserMessagesByUserId,
@@ -55,7 +56,7 @@ function getLatestUserMessage(messages: WebAgentUIMessage[]) {
   return null;
 }
 
-export async function POST(req: Request) {
+export const POST = withRequestContext(async function POST(req: Request) {
   // 1. Validate session
   const authResult = await requireAuthenticatedUser();
   if (!authResult.ok) {
@@ -354,7 +355,7 @@ export async function POST(req: Request) {
       "x-workflow-run-id": run.runId,
     },
   });
-}
+});
 
 type ExistingActiveStreamResolution =
   | {
