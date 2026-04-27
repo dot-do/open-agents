@@ -1,10 +1,17 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
 import { requireTenantCtx, TenantAccessError } from "@/lib/db/tenant-context";
 import { createInvite, listInvites } from "@/lib/invites";
 import { withRateLimit, withReadRateLimit } from "@/lib/rate-limit";
 import { RbacError, requireRole, type Role } from "@/lib/rbac";
+import { validateBody } from "@/lib/validation";
 
 const VALID_ROLES: Role[] = ["owner", "admin", "member", "viewer"];
+
+const inviteSchema = z.object({
+  email: z.string().email("invalid email format").max(320),
+  role: z.enum(["owner", "admin", "member", "viewer"]),
+});
 
 async function getHandler(req: NextRequest): Promise<Response> {
   try {
@@ -28,29 +35,10 @@ async function postHandler(req: NextRequest): Promise<Response> {
     const ctx = await requireTenantCtx(req);
     requireRole(ctx, "admin");
 
-    let body: unknown;
-    try {
-      body = await req.json();
-    } catch {
-      return NextResponse.json({ error: "invalid body" }, { status: 400 });
-    }
+    const { data, response } = await validateBody(req, inviteSchema);
+    if (response) return response;
 
-    const email =
-      body && typeof body === "object" && "email" in body
-        ? (body as { email?: unknown }).email
-        : undefined;
-    const role =
-      body && typeof body === "object" && "role" in body
-        ? (body as { role?: unknown }).role
-        : undefined;
-    if (typeof email !== "string" || email.trim().length === 0) {
-      return NextResponse.json({ error: "email required" }, { status: 400 });
-    }
-    if (typeof role !== "string" || !VALID_ROLES.includes(role as Role)) {
-      return NextResponse.json({ error: "invalid role" }, { status: 400 });
-    }
-
-    const result = await createInvite(ctx, { email, role: role as Role });
+    const result = await createInvite(ctx, { email: data.email, role: data.role as Role });
     return NextResponse.json({
       id: result.id,
       acceptUrl: result.acceptUrl,

@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 import { assertPlanAllows, PlanUpgradeRequired } from "@/lib/billing";
 import { db } from "@/lib/db/client";
 import { tenantSsoConfigs } from "@/lib/db/schema";
@@ -7,6 +8,14 @@ import { requireTenantCtx, TenantAccessError } from "@/lib/db/tenant-context";
 import { withRateLimit } from "@/lib/rate-limit";
 import { RbacError, requireRole } from "@/lib/rbac";
 import type { SsoProvider } from "@/lib/sso";
+import { validateBody } from "@/lib/validation";
+
+const ssoSchema = z.object({
+  provider: z.enum(["workos", "clerk", "saml-generic"]),
+  connectionId: z.string().max(500).nullable().optional(),
+  domain: z.string().max(253).nullable().optional(),
+  enabled: z.boolean().default(false),
+});
 
 /**
  * Tenant SSO configuration endpoint.
@@ -51,32 +60,13 @@ async function putHandler(req: NextRequest): Promise<Response> {
     requireRole(ctx, "admin");
     await assertPlanAllows(ctx, "sso");
 
-    let body: unknown;
-    try {
-      body = await req.json();
-    } catch {
-      return NextResponse.json({ error: "invalid body" }, { status: 400 });
-    }
+    const { data: b, response } = await validateBody(req, ssoSchema);
+    if (response) return response;
 
-    const b = (body ?? {}) as Record<string, unknown>;
     const provider = b.provider;
-    const connectionId =
-      typeof b.connectionId === "string" ? b.connectionId.trim() || null : null;
-    const domain =
-      typeof b.domain === "string"
-        ? b.domain.trim().toLowerCase() || null
-        : null;
-    const enabled = b.enabled === true;
-
-    if (
-      typeof provider !== "string" ||
-      !VALID_PROVIDERS.includes(provider as SsoProvider)
-    ) {
-      return NextResponse.json(
-        { error: "invalid provider" },
-        { status: 400 },
-      );
-    }
+    const connectionId = b.connectionId?.trim() || null;
+    const domain = b.domain?.trim().toLowerCase() || null;
+    const enabled = b.enabled;
 
     const now = new Date();
     await db

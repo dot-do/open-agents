@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
 import {
   requireScope,
   requireTenantCtxAny,
@@ -9,8 +10,15 @@ import {
   listTokens,
   type TokenScope,
 } from "@/lib/db/tenant-api-tokens";
+import { validateBody } from "@/lib/validation";
 
 const SCOPES: TokenScope[] = ["read", "write", "admin"];
+
+const createTokenSchema = z.object({
+  name: z.string().min(1, "name is required").max(100).transform((s) => s.trim()),
+  scope: z.enum(["read", "write", "admin"]),
+  expiresInDays: z.number().int().positive().nullable().optional(),
+});
 
 function canManageTokens(role: string): boolean {
   // Creating/revoking PATs is a tenant-admin action — owners and admins only.
@@ -45,29 +53,13 @@ export async function POST(req: NextRequest): Promise<Response> {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }
     requireScope(ctx, "admin");
-    const body = (await req.json().catch(() => null)) as {
-      name?: string;
-      scope?: string;
-      expiresInDays?: number | null;
-    } | null;
-    if (!body) {
-      return NextResponse.json({ error: "invalid body" }, { status: 400 });
-    }
-    if (!body.name || typeof body.name !== "string" || !body.name.trim()) {
-      return NextResponse.json({ error: "name is required" }, { status: 400 });
-    }
-    if (!SCOPES.includes(body.scope as TokenScope)) {
-      return NextResponse.json({ error: "invalid scope" }, { status: 400 });
-    }
-    const expiresInDays =
-      typeof body.expiresInDays === "number" && body.expiresInDays > 0
-        ? body.expiresInDays
-        : null;
+    const { data: body, response } = await validateBody(req, createTokenSchema);
+    if (response) return response;
 
     const result = await createToken(ctx, {
       name: body.name,
       scope: body.scope as TokenScope,
-      expiresInDays,
+      expiresInDays: body.expiresInDays ?? null,
     });
     // `display_token` is the ONLY time the plaintext is returned. The UI
     // surfaces it in a copy-once banner; subsequent GETs only return the

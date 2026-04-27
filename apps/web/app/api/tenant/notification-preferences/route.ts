@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
 import { requireTenantCtx, TenantAccessError } from "@/lib/db/tenant-context";
 import {
   DEFAULT_NOTIFICATION_EVENTS,
@@ -8,8 +9,14 @@ import {
   type NotificationChannel,
 } from "@/lib/notification-prefs";
 import { withRateLimit, withReadRateLimit } from "@/lib/rate-limit";
+import { validateBody } from "@/lib/validation";
 
 const VALID_CHANNELS: NotificationChannel[] = ["email", "none"];
+
+const notifPrefSchema = z.object({
+  event: z.string().min(1, "event is required").max(100),
+  channel: z.enum(["email", "none"]),
+});
 
 async function getHandler(req: NextRequest): Promise<Response> {
   try {
@@ -36,41 +43,17 @@ async function patchHandler(req: NextRequest): Promise<Response> {
   try {
     const ctx = await requireTenantCtx(req);
 
-    let body: unknown;
-    try {
-      body = await req.json();
-    } catch {
-      return NextResponse.json({ error: "invalid body" }, { status: 400 });
-    }
-
-    if (!body || typeof body !== "object") {
-      return NextResponse.json({ error: "invalid body" }, { status: 400 });
-    }
-
-    const { event, channel } = body as { event?: unknown; channel?: unknown };
-
-    if (typeof event !== "string" || !event) {
-      return NextResponse.json({ error: "event is required" }, { status: 400 });
-    }
-
-    if (
-      typeof channel !== "string" ||
-      !VALID_CHANNELS.includes(channel as NotificationChannel)
-    ) {
-      return NextResponse.json(
-        { error: "channel must be 'email' or 'none'" },
-        { status: 400 },
-      );
-    }
+    const { data, response } = await validateBody(req, notifPrefSchema);
+    if (response) return response;
 
     await updatePref(
       ctx.tenantId,
       ctx.userId,
-      event,
-      channel as NotificationChannel,
+      data.event,
+      data.channel as NotificationChannel,
     );
 
-    return NextResponse.json({ ok: true, event, channel });
+    return NextResponse.json({ ok: true, event: data.event, channel: data.channel });
   } catch (err) {
     if (err instanceof TenantAccessError) {
       return NextResponse.json({ error: err.message }, { status: 401 });

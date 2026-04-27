@@ -1,14 +1,22 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
 import {
   requireTenantCtx,
   TenantAccessError,
 } from "@/lib/db/tenant-context";
 import { withReadRateLimit } from "@/lib/rate-limit";
+import { validateBody } from "@/lib/validation";
 import {
   createWebhook,
   listRecentDeliveries,
   listWebhooks,
 } from "@/lib/webhooks";
+
+const createWebhookSchema = z.object({
+  url: z.string().url("invalid webhook URL").max(2000),
+  events: z.array(z.string().max(100)).min(1, "at least one event is required").max(50),
+  secret: z.string().max(500).optional(),
+});
 
 function canMutate(role: string): boolean {
   return role === "owner" || role === "admin";
@@ -44,14 +52,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     if (!canMutate(ctx.role)) {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }
-    const body = (await req.json().catch(() => null)) as {
-      url?: string;
-      events?: string[];
-      secret?: string;
-    } | null;
-    if (!body || typeof body.url !== "string" || !Array.isArray(body.events)) {
-      return NextResponse.json({ error: "invalid body" }, { status: 400 });
-    }
+    const { data: body, response } = await validateBody(req, createWebhookSchema);
+    if (response) return response;
     const result = await createWebhook(ctx, {
       url: body.url,
       events: body.events,

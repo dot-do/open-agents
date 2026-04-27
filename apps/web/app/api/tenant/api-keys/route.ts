@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
 import {
   requireTenantCtx,
   TenantAccessError,
@@ -9,6 +10,7 @@ import {
   type TenantApiKeyProvider,
 } from "@/lib/db/tenant-api-keys";
 import { withRateLimit, withReadRateLimit } from "@/lib/rate-limit";
+import { validateBody } from "@/lib/validation";
 
 const ALLOWED_PROVIDERS: TenantApiKeyProvider[] = [
   "anthropic",
@@ -17,6 +19,12 @@ const ALLOWED_PROVIDERS: TenantApiKeyProvider[] = [
   "google",
   "xai",
 ];
+
+const createKeySchema = z.object({
+  provider: z.enum(["anthropic", "openai", "gateway", "google", "xai"]),
+  label: z.string().max(100).nullable().optional(),
+  key: z.string().min(8, "key must be at least 8 characters").max(2000),
+});
 
 function canMutate(role: string): boolean {
   return role === "owner" || role === "admin";
@@ -41,26 +49,8 @@ async function postHandler(req: NextRequest): Promise<Response> {
     if (!canMutate(ctx.role)) {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }
-    const body = (await req.json().catch(() => null)) as {
-      provider?: string;
-      label?: string | null;
-      key?: string;
-    } | null;
-    if (!body) {
-      return NextResponse.json({ error: "invalid body" }, { status: 400 });
-    }
-    if (!ALLOWED_PROVIDERS.includes(body.provider as TenantApiKeyProvider)) {
-      return NextResponse.json(
-        { error: "invalid provider" },
-        { status: 400 },
-      );
-    }
-    if (!body.key || typeof body.key !== "string" || body.key.length < 8) {
-      return NextResponse.json(
-        { error: "invalid key" },
-        { status: 400 },
-      );
-    }
+    const { data: body, response } = await validateBody(req, createKeySchema);
+    if (response) return response;
     const dto = await createKey(ctx, {
       provider: body.provider as TenantApiKeyProvider,
       label: body.label ?? null,

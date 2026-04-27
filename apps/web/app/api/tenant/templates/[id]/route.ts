@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
 import {
   requireTenantCtxAny,
   TenantAccessError,
@@ -9,6 +10,18 @@ import {
   updateTemplate,
   type UpdateTemplateInput,
 } from "@/lib/session-templates";
+import { validateBody } from "@/lib/validation";
+
+const updateTemplateSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  description: z.string().max(500).nullable().optional(),
+  modelId: z.string().max(100).nullable().optional(),
+  systemPrompt: z.string().max(10000).nullable().optional(),
+  skillRefs: z.array(z.object({
+    slug: z.string().max(100),
+    version: z.string().max(50).optional(),
+  })).max(50).nullable().optional(),
+});
 
 function canMutate(role: string): boolean {
   return role === "owner" || role === "admin";
@@ -44,11 +57,9 @@ export async function PATCH(
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }
     const { id } = await params;
-    const body = (await req.json().catch(() => null)) as UpdateTemplateInput | null;
-    if (!body) {
-      return NextResponse.json({ error: "invalid body" }, { status: 400 });
-    }
-    const template = await updateTemplate(ctx, id, body);
+    const { data: body, response } = await validateBody(req, updateTemplateSchema);
+    if (response) return response;
+    const template = await updateTemplate(ctx, id, body as UpdateTemplateInput);
     if (!template) {
       return NextResponse.json({ error: "not found" }, { status: 404 });
     }

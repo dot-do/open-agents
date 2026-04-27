@@ -8,6 +8,7 @@ import {
 } from "@/lib/db/tenant-context";
 import { getTenantQuotas } from "@/lib/quotas";
 import { withRateLimit } from "@/lib/rate-limit";
+import { checkBodySize } from "@/lib/validation";
 
 /**
  * GET /api/tenant/quotas — return the tenant's effective quota row,
@@ -65,6 +66,8 @@ async function patchHandler(req: NextRequest): Promise<Response> {
     if (ctx.role !== "owner") {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }
+    const sizeErr = checkBodySize(req);
+    if (sizeErr) return sizeErr;
     const body = (await req.json().catch(() => null)) as {
       maxDailySpendByProvider?: unknown;
     } | null;

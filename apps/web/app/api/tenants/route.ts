@@ -1,8 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
 import { listMembershipsForUser } from "@/lib/db/memberships";
 import { withRateLimit } from "@/lib/rate-limit";
 import { getSessionFromReq } from "@/lib/session/server";
 import { createTenant } from "@/lib/tenants";
+import { validateBody } from "@/lib/validation";
 
 export async function GET(req: NextRequest): Promise<Response> {
   const session = await getSessionFromReq(req);
@@ -17,6 +19,11 @@ export async function GET(req: NextRequest): Promise<Response> {
   });
 }
 
+const createTenantSchema = z.object({
+  name: z.string().min(1, "name is required").max(100, "name must be at most 100 characters").transform((s) => s.trim()),
+  slug: z.string().min(1, "slug is required").max(50, "slug must be at most 50 characters").regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/, "slug must be lowercase alphanumeric with dashes").transform((s) => s.trim()),
+});
+
 async function postHandler(req: NextRequest): Promise<Response> {
   const session = await getSessionFromReq(req);
   const userId = session?.user?.id;
@@ -24,33 +31,13 @@ async function postHandler(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "invalid_body" }, { status: 400 });
-  }
-
-  const name =
-    body && typeof body === "object" && "name" in body
-      ? (body as { name?: unknown }).name
-      : undefined;
-  const slug =
-    body && typeof body === "object" && "slug" in body
-      ? (body as { slug?: unknown }).slug
-      : undefined;
-
-  if (typeof name !== "string" || name.trim().length === 0) {
-    return NextResponse.json({ error: "name required" }, { status: 400 });
-  }
-  if (typeof slug !== "string" || slug.trim().length === 0) {
-    return NextResponse.json({ error: "slug required" }, { status: 400 });
-  }
+  const { data, response } = await validateBody(req, createTenantSchema);
+  if (response) return response;
 
   try {
     const tenant = await createTenant({
-      name: name.trim(),
-      slug: slug.trim(),
+      name: data.name,
+      slug: data.slug,
       ownerUserId: userId,
     });
     return NextResponse.json(

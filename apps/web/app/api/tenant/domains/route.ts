@@ -1,9 +1,15 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
 import {
   requireTenantCtx,
   TenantAccessError,
 } from "@/lib/db/tenant-context";
+import { validateBody } from "@/lib/validation";
 import { addDomain, listDomains } from "@/lib/custom-domains";
+
+const addDomainSchema = z.object({
+  domain: z.string().min(1, "domain is required").max(253).regex(/^[a-zA-Z0-9][a-zA-Z0-9.-]+[a-zA-Z0-9]$/, "invalid domain format"),
+});
 
 function canMutate(role: string): boolean {
   return role === "owner" || role === "admin";
@@ -31,15 +37,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     if (!canMutate(ctx.role)) {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }
-    const body = (await req.json().catch(() => null)) as {
-      domain?: string;
-    } | null;
-    if (!body?.domain || typeof body.domain !== "string") {
-      return NextResponse.json(
-        { error: "domain is required" },
-        { status: 400 },
-      );
-    }
+    const { data: body, response } = await validateBody(req, addDomainSchema);
+    if (response) return response;
     const result = await addDomain(ctx, body.domain);
     return NextResponse.json(result, { status: 201 });
   } catch (err) {

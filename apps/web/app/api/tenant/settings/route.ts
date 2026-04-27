@@ -1,9 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { eq, and, ne } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "@/lib/db/client";
 import { tenants } from "@/lib/db/schema";
 import { requireTenantCtx, TenantAccessError, tenantErrorResponse } from "@/lib/db/tenant-context";
 import { RbacError, requireRole } from "@/lib/rbac";
+import { validateBody } from "@/lib/validation";
 
 /**
  * GET /api/tenant/settings — return current tenant info (name, slug, description).
@@ -36,7 +38,12 @@ export async function GET(req: NextRequest): Promise<Response> {
   return NextResponse.json({ tenant });
 }
 
-const SLUG_RE = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
+const settingsSchema = z.object({
+  name: z.string().min(1).max(100).transform((s) => s.trim()).optional(),
+  slug: z.string().min(3).max(50).regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/, "Slug must be alphanumeric with dashes, no leading/trailing dash.").transform((s) => s.trim().toLowerCase()).optional(),
+  description: z.string().max(500).transform((s) => s.trim()).nullable().optional(),
+  logoUrl: z.string().max(2048).url().transform((s) => s.trim()).nullable().optional(),
+}).refine((d) => Object.keys(d).length > 0, { message: "No valid fields to update." });
 
 /**
  * PATCH /api/tenant/settings — update name, slug, description. Owner/admin only.
@@ -55,42 +62,17 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     throw err;
   }
 
-  let body: Record<string, unknown>;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "invalid_json" }, { status: 400 });
-  }
+  const { data: body, response } = await validateBody(req, settingsSchema);
+  if (response) return response;
 
   const updates: Record<string, unknown> = {};
 
-  if ("name" in body) {
-    const name = String(body.name ?? "").trim();
-    if (!name || name.length > 100) {
-      return NextResponse.json(
-        { error: "Name must be 1-100 characters." },
-        { status: 400 },
-      );
-    }
-    updates.name = name;
+  if (body.name !== undefined) {
+    updates.name = body.name;
   }
 
-  if ("slug" in body) {
-    const slug = String(body.slug ?? "")
-      .trim()
-      .toLowerCase();
-    if (slug.length < 3 || slug.length > 50) {
-      return NextResponse.json(
-        { error: "Slug must be 3-50 characters." },
-        { status: 400 },
-      );
-    }
-    if (!SLUG_RE.test(slug)) {
-      return NextResponse.json(
-        { error: "Slug must be alphanumeric with dashes, no leading/trailing dash." },
-        { status: 400 },
-      );
-    }
+  if (body.slug !== undefined) {
+    const slug = body.slug;
 
     // Check uniqueness (exclude self).
     const [existing] = await db
@@ -109,26 +91,12 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     updates.slug = slug;
   }
 
-  if ("description" in body) {
-    const description = body.description == null ? null : String(body.description).trim();
-    if (description && description.length > 500) {
-      return NextResponse.json(
-        { error: "Description must be at most 500 characters." },
-        { status: 400 },
-      );
-    }
-    updates.description = description;
+  if (body.description !== undefined) {
+    updates.description = body.description;
   }
 
-  if ("logoUrl" in body) {
-    const logoUrl = body.logoUrl == null ? null : String(body.logoUrl).trim();
-    if (logoUrl && logoUrl.length > 2048) {
-      return NextResponse.json(
-        { error: "Logo URL must be at most 2048 characters." },
-        { status: 400 },
-      );
-    }
-    updates.logoUrl = logoUrl;
+  if (body.logoUrl !== undefined) {
+    updates.logoUrl = body.logoUrl;
   }
 
   if (Object.keys(updates).length === 0) {

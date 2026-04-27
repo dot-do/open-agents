@@ -1,13 +1,19 @@
 import { and, eq } from "drizzle-orm";
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
 import { db } from "@/lib/db/client";
 import { countOwners } from "@/lib/db/memberships";
 import { memberships } from "@/lib/db/schema";
 import { requireTenantCtx, TenantAccessError } from "@/lib/db/tenant-context";
 import { withRateLimit } from "@/lib/rate-limit";
 import { RbacError, requireRole, type Role } from "@/lib/rbac";
+import { validateBody } from "@/lib/validation";
 
 const VALID_ROLES: Role[] = ["owner", "admin", "member", "viewer"];
+
+const changeRoleSchema = z.object({
+  role: z.enum(["owner", "admin", "member", "viewer"]),
+});
 
 async function safeAudit(
   ctx: { tenantId: string; userId: string },
@@ -34,22 +40,9 @@ async function patchHandler(
     requireRole(ctx, "owner");
     const { userId } = await params;
 
-    let body: unknown;
-    try {
-      body = await req.json();
-    } catch {
-      return NextResponse.json({ error: "invalid body" }, { status: 400 });
-    }
-    const nextRole =
-      body && typeof body === "object" && "role" in body
-        ? (body as { role?: unknown }).role
-        : undefined;
-    if (
-      typeof nextRole !== "string" ||
-      !VALID_ROLES.includes(nextRole as Role)
-    ) {
-      return NextResponse.json({ error: "invalid role" }, { status: 400 });
-    }
+    const { data, response } = await validateBody(req, changeRoleSchema);
+    if (response) return response;
+    const nextRole = data.role;
 
     const [target] = await db
       .select({ role: memberships.role })

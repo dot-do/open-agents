@@ -1,9 +1,17 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
 import {
   requireTenantCtx,
   TenantAccessError,
 } from "@/lib/db/tenant-context";
+import { validateBody } from "@/lib/validation";
 import { deleteWebhook, updateWebhook } from "@/lib/webhooks";
+
+const updateWebhookSchema = z.object({
+  url: z.string().url("invalid webhook URL").max(2000).optional(),
+  events: z.array(z.string().max(100)).min(1).max(50).optional(),
+  enabled: z.boolean().optional(),
+}).refine((d) => Object.keys(d).length > 0, { message: "No fields to update." });
 
 function canMutate(role: string): boolean {
   return role === "owner" || role === "admin";
@@ -19,14 +27,8 @@ export async function PATCH(
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }
     const { id } = await params;
-    const body = (await req.json().catch(() => null)) as {
-      url?: string;
-      events?: string[];
-      enabled?: boolean;
-    } | null;
-    if (!body) {
-      return NextResponse.json({ error: "invalid body" }, { status: 400 });
-    }
+    const { data: body, response } = await validateBody(req, updateWebhookSchema);
+    if (response) return response;
     const updated = await updateWebhook(ctx, id, body);
     if (!updated) {
       return NextResponse.json({ error: "not found" }, { status: 404 });

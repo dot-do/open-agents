@@ -1,35 +1,24 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
 import { requireTenantCtx, TenantAccessError } from "@/lib/db/tenant-context";
 import { withRateLimit } from "@/lib/rate-limit";
 import { RbacError, requireRole } from "@/lib/rbac";
 import { transferOwnership, TransferError } from "@/lib/tenant-transfer";
+import { validateBody } from "@/lib/validation";
+
+const transferSchema = z.object({
+  newOwnerUserId: z.string().min(1, "newOwnerUserId is required").max(100),
+});
 
 async function postHandler(req: NextRequest): Promise<Response> {
   try {
     const ctx = await requireTenantCtx(req);
     requireRole(ctx, "owner");
 
-    let body: unknown;
-    try {
-      body = await req.json();
-    } catch {
-      return NextResponse.json({ error: "invalid body" }, { status: 400 });
-    }
+    const { data, response } = await validateBody(req, transferSchema);
+    if (response) return response;
 
-    if (!body || typeof body !== "object") {
-      return NextResponse.json({ error: "invalid body" }, { status: 400 });
-    }
-
-    const { newOwnerUserId } = body as { newOwnerUserId?: unknown };
-
-    if (typeof newOwnerUserId !== "string" || !newOwnerUserId) {
-      return NextResponse.json(
-        { error: "newOwnerUserId is required" },
-        { status: 400 },
-      );
-    }
-
-    const result = await transferOwnership(ctx, newOwnerUserId);
+    const result = await transferOwnership(ctx, data.newOwnerUserId);
 
     return NextResponse.json({
       ok: true,
